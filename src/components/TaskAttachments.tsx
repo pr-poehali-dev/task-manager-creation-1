@@ -9,6 +9,7 @@ import {
   formatFileSize,
   getFileIcon,
 } from "@/lib/task-store";
+import FilePreview, { isPreviewable } from "./FilePreview";
 
 interface TaskAttachmentsProps {
   taskId: string;
@@ -20,6 +21,7 @@ export default function TaskAttachments({ taskId }: TaskAttachmentsProps) {
   const [files, setFiles] = useState<Attachment[]>([]);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [preview, setPreview] = useState<Attachment | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -50,6 +52,16 @@ export default function TaskAttachments({ taskId }: TaskAttachmentsProps) {
     await deleteAttachment(id);
     setFiles((prev) => prev.filter((f) => f.id !== id));
   };
+
+  const handleClick = (file: Attachment) => {
+    if (isPreviewable(file.contentType)) {
+      setPreview(file);
+    } else {
+      window.open(file.cdnUrl, "_blank");
+    }
+  };
+
+  const isImg = (ct: string) => ct.startsWith("image/");
 
   return (
     <div className="space-y-3">
@@ -107,23 +119,44 @@ export default function TaskAttachments({ taskId }: TaskAttachmentsProps) {
               key={file.id}
               className="flex items-center gap-2.5 p-2 rounded-md border bg-muted/30 group hover:bg-muted/50 transition-colors"
             >
-              <div className="shrink-0 w-8 h-8 rounded flex items-center justify-center bg-background border">
-                <Icon name={getFileIcon(file.contentType)} size={16} className="text-muted-foreground" />
-              </div>
+              <button
+                onClick={() => handleClick(file)}
+                className="shrink-0 w-10 h-10 rounded overflow-hidden flex items-center justify-center bg-background border hover:border-primary/40 transition-colors cursor-pointer"
+              >
+                {isImg(file.contentType) ? (
+                  <img src={file.cdnUrl} alt={file.fileName} className="w-full h-full object-cover" />
+                ) : (
+                  <Icon name={getFileIcon(file.contentType)} size={18} className="text-muted-foreground" />
+                )}
+              </button>
               <div className="flex-1 min-w-0">
-                <a
-                  href={file.cdnUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs font-medium hover:underline truncate block"
+                <button
+                  onClick={() => handleClick(file)}
+                  className="text-xs font-medium hover:underline truncate block text-left w-full"
                 >
                   {file.fileName}
-                </a>
-                <span className="text-[10px] text-muted-foreground">
-                  {formatFileSize(file.fileSize)}
-                </span>
+                </button>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-muted-foreground">
+                    {formatFileSize(file.fileSize)}
+                  </span>
+                  {isPreviewable(file.contentType) && (
+                    <span className="text-[10px] text-primary/60 flex items-center gap-0.5">
+                      <Icon name="Eye" size={9} />
+                      превью
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                {isPreviewable(file.contentType) && (
+                  <button
+                    onClick={() => setPreview(file)}
+                    className="h-6 w-6 flex items-center justify-center rounded hover:bg-primary/10 transition-colors"
+                  >
+                    <Icon name="Eye" size={12} className="text-primary" />
+                  </button>
+                )}
                 <a
                   href={file.cdnUrl}
                   target="_blank"
@@ -156,6 +189,8 @@ export default function TaskAttachments({ taskId }: TaskAttachmentsProps) {
           </button>
         </div>
       )}
+
+      <FilePreview file={preview} onClose={() => setPreview(null)} />
     </div>
   );
 }

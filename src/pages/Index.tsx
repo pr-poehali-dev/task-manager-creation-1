@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -8,8 +8,14 @@ import TaskForm from "@/components/TaskForm";
 import StatsPanel from "@/components/StatsPanel";
 import CalendarView from "@/components/CalendarView";
 import type { Task, Priority } from "@/lib/task-store";
-import { loadTasks, saveTasks, createTask, getStats } from "@/lib/task-store";
-import { isPast, isToday, compareAsc } from "date-fns";
+import {
+  fetchTasks,
+  createTaskApi,
+  updateTaskApi,
+  deleteTaskApi,
+  getStats,
+} from "@/lib/task-store";
+import { compareAsc } from "date-fns";
 
 type Tab = "active" | "completed" | "priority" | "deadlines" | "stats" | "archive";
 
@@ -19,56 +25,50 @@ const Index = () => {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<Tab>("active");
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    setTasks(loadTasks());
+  const loadData = useCallback(async () => {
+    const data = await fetchTasks();
+    setTasks(data);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
-    saveTasks(tasks);
-  }, [tasks]);
+    loadData();
+  }, [loadData]);
 
-  const handleCreate = (data: {
+  const handleCreate = async (data: {
     title: string;
     description: string;
     priority: Priority;
     dueDate: string | null;
   }) => {
     if (editingTask) {
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === editingTask.id ? { ...t, ...data } : t
-        )
-      );
+      const updated = await updateTaskApi({ id: editingTask.id, ...data });
+      setTasks((prev) => prev.map((t) => (t.id === editingTask.id ? updated : t)));
       setEditingTask(null);
     } else {
-      setTasks((prev) => [createTask(data), ...prev]);
+      const created = await createTaskApi(data);
+      setTasks((prev) => [created, ...prev]);
     }
   };
 
-  const handleToggle = (id: string) => {
-    setTasks((prev) =>
-      prev.map((t) =>
-        t.id === id
-          ? {
-              ...t,
-              status: t.status === "completed" ? "active" : "completed",
-              completedAt:
-                t.status === "completed" ? null : new Date().toISOString(),
-            }
-          : t
-      )
-    );
+  const handleToggle = async (id: string) => {
+    const task = tasks.find((t) => t.id === id);
+    if (!task) return;
+    const newStatus = task.status === "completed" ? "active" : "completed";
+    const updated = await updateTaskApi({ id, status: newStatus });
+    setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
+    await deleteTaskApi(id);
     setTasks((prev) => prev.filter((t) => t.id !== id));
   };
 
-  const handleArchive = (id: string) => {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, status: "archived" as const } : t))
-    );
+  const handleArchive = async (id: string) => {
+    const updated = await updateTaskApi({ id, status: "archived" });
+    setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
   };
 
   const handleEdit = (task: Task) => {
@@ -98,18 +98,17 @@ const Index = () => {
     return [...activeTasks].sort((a, b) => order[a.priority] - order[b.priority]);
   }, [activeTasks]);
 
-  const byDeadline = useMemo(() => {
-    const withDates = activeTasks.filter((t) => t.dueDate);
-    const withoutDates = activeTasks.filter((t) => !t.dueDate);
-    const sorted = withDates.sort((a, b) =>
-      compareAsc(new Date(a.dueDate!), new Date(b.dueDate!))
-    );
-    return [...sorted, ...withoutDates];
-  }, [activeTasks]);
-
   const stats = useMemo(() => getStats(tasks), [tasks]);
 
   const renderTaskList = (list: Task[], emptyIcon: string, emptyText: string) => {
+    if (loading) {
+      return (
+        <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+          <Icon name="Loader2" size={32} className="mb-4 opacity-40 animate-spin" />
+          <p className="text-sm">Загрузка задач...</p>
+        </div>
+      );
+    }
     if (list.length === 0) {
       return (
         <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
@@ -224,7 +223,12 @@ const Index = () => {
           </TabsContent>
 
           <TabsContent value="priority">
-            {byPriority.length === 0 ? (
+            {loading ? (
+              <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                <Icon name="Loader2" size={32} className="mb-4 opacity-40 animate-spin" />
+                <p className="text-sm">Загрузка...</p>
+              </div>
+            ) : byPriority.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
                 <Icon name="ArrowUpDown" size={48} className="mb-4 opacity-20" />
                 <p className="text-sm">Нет задач для сортировки</p>

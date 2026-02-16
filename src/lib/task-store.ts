@@ -1,3 +1,5 @@
+import funcUrls from "../../backend/func2url.json";
+
 export type Priority = "high" | "medium" | "low";
 export type TaskStatus = "active" | "completed" | "archived";
 
@@ -12,41 +14,39 @@ export interface Task {
   completedAt: string | null;
 }
 
-const STORAGE_KEY = "task-manager-tasks";
+const API = funcUrls["tasks-api"];
 
-function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2);
+export async function fetchTasks(): Promise<Task[]> {
+  const res = await fetch(API);
+  if (!res.ok) return [];
+  return res.json();
 }
 
-export function loadTasks(): Task[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-export function saveTasks(tasks: Task[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-}
-
-export function createTask(data: {
+export async function createTaskApi(data: {
   title: string;
   description: string;
   priority: Priority;
   dueDate: string | null;
-}): Task {
-  return {
-    id: generateId(),
-    title: data.title,
-    description: data.description,
-    priority: data.priority,
-    status: "active",
-    dueDate: data.dueDate,
-    createdAt: new Date().toISOString(),
-    completedAt: null,
-  };
+}): Promise<Task> {
+  const res = await fetch(API, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function updateTaskApi(task: Partial<Task> & { id: string }): Promise<Task> {
+  const res = await fetch(API, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(task),
+  });
+  return res.json();
+}
+
+export async function deleteTaskApi(id: string): Promise<void> {
+  await fetch(`${API}?id=${id}`, { method: "DELETE" });
 }
 
 export function getStats(tasks: Task[]) {
@@ -87,4 +87,4 @@ export const priorityColors: Record<Priority, string> = {
   low: "bg-blue-100 text-blue-700 border-blue-200",
 };
 
-export default { loadTasks, saveTasks, createTask, getStats };
+export default { fetchTasks, createTaskApi, updateTaskApi, deleteTaskApi, getStats };

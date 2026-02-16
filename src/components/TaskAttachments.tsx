@@ -141,35 +141,38 @@ export default function TaskAttachments({ taskId }: TaskAttachmentsProps) {
                     {formatFileSize(file.fileSize)}
                   </span>
                   {isPreviewable(file.contentType) && (
-                    <span className="text-[10px] text-primary/60 flex items-center gap-0.5">
-                      <Icon name="Eye" size={9} />
+                    <span className="text-[10px] text-primary/60 flex items-center gap-1">
+                      <Icon name="Eye" size={11} />
                       превью
                     </span>
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="flex items-center gap-0.5 shrink-0">
                 {isPreviewable(file.contentType) && (
                   <button
                     onClick={() => setPreview(file)}
-                    className="h-6 w-6 flex items-center justify-center rounded hover:bg-primary/10 transition-colors"
+                    className="h-7 w-7 flex items-center justify-center rounded hover:bg-primary/10 transition-colors"
+                    title="Просмотр"
                   >
-                    <Icon name="Eye" size={12} className="text-primary" />
+                    <Icon name="Eye" size={14} className="text-primary" />
                   </button>
                 )}
                 <a
                   href={file.cdnUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="h-6 w-6 flex items-center justify-center rounded hover:bg-background transition-colors"
+                  className="h-7 w-7 flex items-center justify-center rounded hover:bg-muted transition-colors"
+                  title="Скачать"
                 >
-                  <Icon name="Download" size={12} className="text-muted-foreground" />
+                  <Icon name="Download" size={14} className="text-muted-foreground" />
                 </a>
                 <button
                   onClick={() => handleDelete(file.id)}
-                  className="h-6 w-6 flex items-center justify-center rounded hover:bg-red-100 transition-colors"
+                  className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-100 transition-colors"
+                  title="Удалить"
                 >
-                  <Icon name="X" size={12} className="text-red-500" />
+                  <Icon name="X" size={14} className="text-red-500" />
                 </button>
               </div>
             </div>

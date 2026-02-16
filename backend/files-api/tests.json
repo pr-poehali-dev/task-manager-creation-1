@@ -1,0 +1,16 @@
+{
+  "tests": [
+    {
+      "name": "Get attachments for task",
+      "method": "GET",
+      "path": "/?task_id=test",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Options CORS",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    }
+  ]
+}

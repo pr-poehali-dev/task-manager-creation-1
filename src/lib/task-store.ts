@@ -87,4 +87,74 @@ export const priorityColors: Record<Priority, string> = {
   low: "bg-blue-100 text-blue-700 border-blue-200",
 };
 
+export interface Attachment {
+  id: string;
+  taskId: string;
+  fileName: string;
+  fileSize: number;
+  contentType: string;
+  cdnUrl: string;
+  createdAt: string;
+}
+
+const FILES_API = funcUrls["files-api"];
+
+export async function fetchAttachments(taskId: string): Promise<Attachment[]> {
+  const res = await fetch(`${FILES_API}?task_id=${taskId}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function uploadAttachment(
+  taskId: string,
+  file: File
+): Promise<Attachment> {
+  const buffer = await file.arrayBuffer();
+  const base64 = btoa(
+    new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
+  );
+  const res = await fetch(FILES_API, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      taskId,
+      fileName: file.name,
+      contentType: file.type || "application/octet-stream",
+      fileData: base64,
+    }),
+  });
+  return res.json();
+}
+
+export async function deleteAttachment(id: string): Promise<void> {
+  await fetch(`${FILES_API}?id=${id}`, { method: "DELETE" });
+}
+
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return bytes + " Б";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " КБ";
+  return (bytes / (1024 * 1024)).toFixed(1) + " МБ";
+}
+
+const FILE_ICONS: Record<string, string> = {
+  "application/pdf": "FileText",
+  "application/msword": "FileText",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "FileText",
+  "application/vnd.ms-excel": "FileSpreadsheet",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "FileSpreadsheet",
+  "application/vnd.ms-powerpoint": "FileText",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "FileText",
+  "image/png": "Image",
+  "image/jpeg": "Image",
+  "image/gif": "Image",
+  "image/webp": "Image",
+  "text/plain": "FileText",
+  "application/zip": "FileArchive",
+  "application/x-rar-compressed": "FileArchive",
+};
+
+export function getFileIcon(contentType: string): string {
+  return FILE_ICONS[contentType] || "File";
+}
+
 export default { fetchTasks, createTaskApi, updateTaskApi, deleteTaskApi, getStats };

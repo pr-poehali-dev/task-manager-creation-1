@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,10 +26,19 @@ interface TaskFormProps {
 }
 
 export default function TaskForm({ open, onClose, onSave, task }: TaskFormProps) {
-  const [title, setTitle] = useState(task?.title ?? "");
-  const [description, setDescription] = useState(task?.description ?? "");
-  const [priority, setPriority] = useState<Priority>(task?.priority ?? "medium");
-  const [dueDate, setDueDate] = useState(task?.dueDate?.split("T")[0] ?? "");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [priority, setPriority] = useState<Priority>("medium");
+  const [dueDate, setDueDate] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setTitle(task?.title ?? "");
+      setDescription(task?.description ?? "");
+      setPriority(task?.priority ?? "medium");
+      setDueDate(task?.dueDate?.split("T")[0] ?? "");
+    }
+  }, [open, task]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

@@ -2,6 +2,9 @@ import json
 import os
 import uuid
 import base64
+import hashlib
+import hmac
+import time
 import boto3
 import psycopg2
 import psycopg2.extras
@@ -9,10 +12,39 @@ import psycopg2.extras
 CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-User-Id, X-Auth-Token, X-Session-Id',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Authorization',
     'Access-Control-Max-Age': '86400',
     'Content-Type': 'application/json'
 }
+
+SECRET = None
+
+def get_secret():
+    global SECRET
+    if SECRET is None:
+        SECRET = os.environ.get('AUTH_SECRET', 'task-manager-secret-2024')
+    return SECRET
+
+def verify_token(token):
+    parts = token.split(":")
+    if len(parts) != 3:
+        return None
+    user_id, ts, sig = parts
+    payload = user_id + ":" + ts
+    expected = hmac.new(get_secret().encode(), payload.encode(), hashlib.sha256).hexdigest()[:32]
+    if not hmac.compare_digest(sig, expected):
+        return None
+    if int(time.time()) - int(ts) > 30 * 24 * 3600:
+        return None
+    return user_id
+
+def get_user_id(event):
+    auth = (event.get('headers') or {}).get('X-Authorization', '')
+    if not auth:
+        auth = (event.get('headers') or {}).get('x-authorization', '')
+    if auth.startswith('Bearer '):
+        return verify_token(auth[7:])
+    return None
 
 def get_conn():
     return psycopg2.connect(os.environ['DATABASE_URL'])
@@ -29,9 +61,13 @@ def cdn_url(key):
     return "https://cdn.poehali.dev/projects/%s/bucket/%s" % (os.environ['AWS_ACCESS_KEY_ID'], key)
 
 def handler(event, context):
-    """Загрузка, получение и удаление файлов-вложений к задачам"""
+    """Загрузка, получение и удаление файлов-вложений к задачам с авторизацией"""
     if event.get('httpMethod') == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS_HEADERS, 'body': ''}
+
+    user_id = get_user_id(event)
+    if not user_id:
+        return {'statusCode': 401, 'headers': CORS_HEADERS, 'body': json.dumps({'error': 'Unauthorized'})}
 
     method = event.get('httpMethod', 'GET')
     params = event.get('queryStringParameters') or {}
@@ -45,8 +81,8 @@ def handler(event, context):
             task_id = params.get('task_id', '')
             cur.execute(
                 "SELECT id, task_id, file_name, file_size, content_type, cdn_url, created_at "
-                "FROM attachments WHERE task_id = '%s' ORDER BY created_at DESC"
-                % task_id.replace("'", "")
+                "FROM attachments WHERE task_id = '%s' AND user_id = '%s' ORDER BY created_at DESC"
+                % (task_id.replace("'", ""), user_id.replace("'", ""))
             )
             rows = cur.fetchall()
             result = []
@@ -87,8 +123,8 @@ def handler(event, context):
             url = cdn_url(s3_key)
 
             cur.execute(
-                "INSERT INTO attachments (id, task_id, file_name, file_size, content_type, cdn_url) "
-                "VALUES ('%s', '%s', '%s', %d, '%s', '%s') "
+                "INSERT INTO attachments (id, task_id, file_name, file_size, content_type, cdn_url, user_id) "
+                "VALUES ('%s', '%s', '%s', %d, '%s', '%s', '%s') "
                 "RETURNING id, task_id, file_name, file_size, content_type, cdn_url, created_at"
                 % (
                     file_id,
@@ -96,7 +132,8 @@ def handler(event, context):
                     safe_name.replace("'", "''"),
                     file_size,
                     content_type.replace("'", ""),
-                    url.replace("'", "")
+                    url.replace("'", ""),
+                    user_id.replace("'", "")
                 )
             )
             r = cur.fetchone()
@@ -117,11 +154,9 @@ def handler(event, context):
         elif method == 'DELETE':
             file_id = params.get('id', '').replace("'", "")
             cur.execute(
-                "SELECT cdn_url FROM attachments WHERE id = '%s'" % file_id
+                "UPDATE attachments SET task_id = '' WHERE id = '%s' AND user_id = '%s'"
+                % (file_id, user_id.replace("'", ""))
             )
-            row = cur.fetchone()
-            if row:
-                cur.execute("UPDATE attachments SET task_id = '' WHERE id = '%s'" % file_id)
             return {'statusCode': 200, 'headers': CORS_HEADERS, 'body': json.dumps({'ok': True})}
 
         return {'statusCode': 405, 'headers': CORS_HEADERS, 'body': json.dumps({'error': 'Method not allowed'})}

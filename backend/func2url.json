@@ -1,4 +1,5 @@
 {
+  "auth-api": "https://functions.poehali.dev/00bfcb88-877f-4bdc-b11f-e535d5fafddd",
   "files-api": "https://functions.poehali.dev/000a9eee-9fcc-457c-ba71-141cf983172c",
   "tasks-api": "https://functions.poehali.dev/a2150e01-6629-4275-916b-2b43eb89dbcb"
 }

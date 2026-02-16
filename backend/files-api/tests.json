@@ -1,10 +1,10 @@
 {
   "tests": [
     {
-      "name": "Get attachments for task",
+      "name": "Unauthorized access",
       "method": "GET",
       "path": "/?task_id=test",
-      "expectedStatus": 200
+      "expectedStatus": 401
     },
     {
       "name": "Options CORS",

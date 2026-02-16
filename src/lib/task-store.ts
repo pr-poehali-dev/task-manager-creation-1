@@ -1,4 +1,5 @@
 import funcUrls from "../../backend/func2url.json";
+import { authHeaders } from "./auth";
 
 export type Priority = "high" | "medium" | "low";
 export type TaskStatus = "active" | "completed" | "archived";
@@ -17,7 +18,7 @@ export interface Task {
 const API = funcUrls["tasks-api"];
 
 export async function fetchTasks(): Promise<Task[]> {
-  const res = await fetch(API);
+  const res = await fetch(API, { headers: authHeaders() });
   if (!res.ok) return [];
   return res.json();
 }
@@ -30,7 +31,7 @@ export async function createTaskApi(data: {
 }): Promise<Task> {
   const res = await fetch(API, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(data),
   });
   return res.json();
@@ -39,14 +40,14 @@ export async function createTaskApi(data: {
 export async function updateTaskApi(task: Partial<Task> & { id: string }): Promise<Task> {
   const res = await fetch(API, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(task),
   });
   return res.json();
 }
 
 export async function deleteTaskApi(id: string): Promise<void> {
-  await fetch(`${API}?id=${id}`, { method: "DELETE" });
+  await fetch(`${API}?id=${id}`, { method: "DELETE", headers: authHeaders() });
 }
 
 export function getStats(tasks: Task[]) {
@@ -100,7 +101,7 @@ export interface Attachment {
 const FILES_API = funcUrls["files-api"];
 
 export async function fetchAttachments(taskId: string): Promise<Attachment[]> {
-  const res = await fetch(`${FILES_API}?task_id=${taskId}`);
+  const res = await fetch(`${FILES_API}?task_id=${taskId}`, { headers: authHeaders() });
   if (!res.ok) return [];
   return res.json();
 }
@@ -115,7 +116,7 @@ export async function uploadAttachment(
   );
   const res = await fetch(FILES_API, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({
       taskId,
       fileName: file.name,
@@ -127,7 +128,7 @@ export async function uploadAttachment(
 }
 
 export async function deleteAttachment(id: string): Promise<void> {
-  await fetch(`${FILES_API}?id=${id}`, { method: "DELETE" });
+  await fetch(`${FILES_API}?id=${id}`, { method: "DELETE", headers: authHeaders() });
 }
 
 export function formatFileSize(bytes: number): string {

@@ -7,6 +7,7 @@ import TaskCard from "@/components/TaskCard";
 import TaskForm from "@/components/TaskForm";
 import StatsPanel from "@/components/StatsPanel";
 import CalendarView from "@/components/CalendarView";
+import AuthScreen from "@/components/AuthScreen";
 import type { Task, Priority } from "@/lib/task-store";
 import {
   fetchTasks,
@@ -15,11 +16,14 @@ import {
   deleteTaskApi,
   getStats,
 } from "@/lib/task-store";
-import { compareAsc } from "date-fns";
+import { checkAuth, clearToken } from "@/lib/auth";
+import type { User } from "@/lib/auth";
 
 type Tab = "active" | "completed" | "priority" | "deadlines" | "stats" | "archive";
 
 const Index = () => {
+  const [user, setUser] = useState<User | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [formOpen, setFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -27,15 +31,30 @@ const Index = () => {
   const [tab, setTab] = useState<Tab>("active");
   const [loading, setLoading] = useState(true);
 
+  useEffect(() => {
+    checkAuth().then((u) => {
+      setUser(u);
+      setAuthChecked(true);
+    });
+  }, []);
+
   const loadData = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
     const data = await fetchTasks();
     setTasks(data);
     setLoading(false);
-  }, []);
+  }, [user]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (user) loadData();
+  }, [user, loadData]);
+
+  const handleLogout = () => {
+    clearToken();
+    setUser(null);
+    setTasks([]);
+  };
 
   const handleCreate = async (data: {
     title: string;
@@ -100,6 +119,18 @@ const Index = () => {
 
   const stats = useMemo(() => getStats(tasks), [tasks]);
 
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Icon name="Loader2" size={32} className="animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthScreen onAuth={(u) => setUser(u)} />;
+  }
+
   const renderTaskList = (list: Task[], emptyIcon: string, emptyText: string) => {
     if (loading) {
       return (
@@ -149,17 +180,27 @@ const Index = () => {
                 </p>
               </div>
             </div>
-            <Button
-              onClick={() => {
-                setEditingTask(null);
-                setFormOpen(true);
-              }}
-              size="sm"
-              className="gap-1.5"
-            >
-              <Icon name="Plus" size={16} />
-              Новая задача
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => {
+                  setEditingTask(null);
+                  setFormOpen(true);
+                }}
+                size="sm"
+                className="gap-1.5"
+              >
+                <Icon name="Plus" size={16} />
+                <span className="hidden sm:inline">Новая задача</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleLogout}
+                className="gap-1.5 text-muted-foreground"
+              >
+                <Icon name="LogOut" size={16} />
+              </Button>
+            </div>
           </div>
         </div>
       </header>

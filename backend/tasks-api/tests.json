@@ -1,26 +1,10 @@
 {
   "tests": [
     {
-      "name": "Get all tasks",
+      "name": "Unauthorized access",
       "method": "GET",
       "path": "/",
-      "expectedStatus": 200
-    },
-    {
-      "name": "Create task",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "title": "Test task",
-        "description": "Test description",
-        "priority": "medium"
-      },
-      "expectedStatus": 201,
-      "expectedBody": {
-        "id": "string",
-        "title": "string"
-      },
-      "bodyMatcher": "partial"
+      "expectedStatus": 401
     },
     {
       "name": "Options CORS",

@@ -75,6 +75,42 @@ export async function deleteDocument(id: string): Promise<void> {
   });
 }
 
+// ── Doc Attachments ────────────────────────────────────
+
+const FILES_API = (funcUrls as Record<string, string>)["files-api"];
+
+export interface DocAttachment {
+  id: string;
+  docId: string;
+  fileName: string;
+  fileSize: number;
+  contentType: string;
+  cdnUrl: string;
+  createdAt: string;
+}
+
+export async function fetchDocAttachments(docId: string): Promise<DocAttachment[]> {
+  const res = await fetch(`${FILES_API}?doc_id=${docId}`, { headers: authHeaders() });
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function uploadDocAttachment(docId: string, file: File): Promise<DocAttachment> {
+  const buffer = await file.arrayBuffer();
+  const base64 = btoa(new Uint8Array(buffer).reduce((d, b) => d + String.fromCharCode(b), ""));
+  const res = await fetch(FILES_API, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ docId, fileName: file.name, contentType: file.type || "application/octet-stream", fileData: base64 }),
+  });
+  if (!res.ok) throw new Error("Ошибка загрузки файла");
+  return res.json();
+}
+
+export async function deleteDocAttachment(id: string): Promise<void> {
+  await fetch(`${FILES_API}?id=${id}`, { method: "DELETE", headers: authHeaders() });
+}
+
 // ── Recipients ─────────────────────────────────────────
 
 export async function fetchRecipients(): Promise<Recipient[]> {

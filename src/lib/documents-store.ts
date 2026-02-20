@@ -20,7 +20,7 @@ export interface Recipient {
   fullName: string;
   position: string;
   address: string;
-  email: string;
+  emails: string[];
   createdAt: string;
 }
 

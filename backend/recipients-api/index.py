@@ -49,17 +49,24 @@ def get_conn():
     return psycopg2.connect(os.environ['DATABASE_URL'])
 
 def row_to_recipient(r):
+    emails = r.get('emails') or []
+    if isinstance(emails, str):
+        emails = []
     return {
         'id': str(r['id']),
         'fullName': r['full_name'],
         'position': r['position'],
         'address': r['address'],
-        'email': r['email'],
+        'emails': list(emails),
         'createdAt': r['created_at'].isoformat() if r['created_at'] else None,
     }
 
+def emails_to_pg_array(emails):
+    safe = [e.replace("'", "''").replace('"', '') for e in emails if e.strip()]
+    return "ARRAY[%s]::TEXT[]" % ','.join("'%s'" % e for e in safe) if safe else "ARRAY[]::TEXT[]"
+
 def handler(event, context):
-    """API для справочника адресатов: ФИО, должность, адрес, email"""
+    """API для справочника адресатов: ФИО, должность, адрес, несколько email"""
     if event.get('httpMethod') == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS_HEADERS, 'body': ''}
 
@@ -79,7 +86,7 @@ def handler(event, context):
 
         if method == 'GET':
             cur.execute(
-                "SELECT id, full_name, position, address, email, created_at "
+                "SELECT id, full_name, position, address, emails, created_at "
                 "FROM %s.recipients WHERE user_id = '%s' ORDER BY full_name ASC"
                 % (SCHEMA, uid)
             )
@@ -91,16 +98,19 @@ def handler(event, context):
             full_name = body.get('fullName', '').replace("'", "''")
             position = body.get('position', '').replace("'", "''")
             address = body.get('address', '').replace("'", "''")
-            email = body.get('email', '').replace("'", "''")
+            emails = body.get('emails', [])
+            if not isinstance(emails, list):
+                emails = [emails] if emails else []
 
             if not full_name:
                 return {'statusCode': 400, 'headers': CORS_HEADERS, 'body': json.dumps({'error': 'fullName required'})}
 
+            emails_sql = emails_to_pg_array(emails)
             cur.execute(
-                "INSERT INTO %s.recipients (user_id, full_name, position, address, email) "
-                "VALUES ('%s', '%s', '%s', '%s', '%s') "
-                "RETURNING id, full_name, position, address, email, created_at"
-                % (SCHEMA, uid, full_name, position, address, email)
+                "INSERT INTO %s.recipients (user_id, full_name, position, address, emails) "
+                "VALUES ('%s', '%s', '%s', '%s', %s) "
+                "RETURNING id, full_name, position, address, emails, created_at"
+                % (SCHEMA, uid, full_name, position, address, emails_sql)
             )
             r = cur.fetchone()
             return {'statusCode': 201, 'headers': CORS_HEADERS, 'body': json.dumps(row_to_recipient(r))}
@@ -115,12 +125,15 @@ def handler(event, context):
                 sets.append("position = '%s'" % body['position'].replace("'", "''"))
             if 'address' in body:
                 sets.append("address = '%s'" % body['address'].replace("'", "''"))
-            if 'email' in body:
-                sets.append("email = '%s'" % body['email'].replace("'", "''"))
+            if 'emails' in body:
+                emails = body['emails']
+                if not isinstance(emails, list):
+                    emails = [emails] if emails else []
+                sets.append("emails = %s" % emails_to_pg_array(emails))
 
             cur.execute(
                 "UPDATE %s.recipients SET %s WHERE id = '%s' AND user_id = '%s' "
-                "RETURNING id, full_name, position, address, email, created_at"
+                "RETURNING id, full_name, position, address, emails, created_at"
                 % (SCHEMA, ', '.join(sets), rec_id, uid)
             )
             r = cur.fetchone()

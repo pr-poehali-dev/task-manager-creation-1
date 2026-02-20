@@ -8,6 +8,7 @@ import TaskForm from "@/components/TaskForm";
 import StatsPanel from "@/components/StatsPanel";
 import CalendarView from "@/components/CalendarView";
 import AuthScreen from "@/components/AuthScreen";
+import DocumentsPage from "@/components/DocumentsPage";
 import type { Task, Priority } from "@/lib/task-store";
 import {
   fetchTasks,
@@ -19,7 +20,7 @@ import {
 import { checkAuth, clearToken } from "@/lib/auth";
 import type { User } from "@/lib/auth";
 
-type Tab = "active" | "completed" | "priority" | "deadlines" | "stats" | "archive";
+type Tab = "active" | "completed" | "priority" | "deadlines" | "stats" | "archive" | "documents";
 
 const Index = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -181,17 +182,19 @@ const Index = () => {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                onClick={() => {
-                  setEditingTask(null);
-                  setFormOpen(true);
-                }}
-                size="sm"
-                className="gap-1.5"
-              >
-                <Icon name="Plus" size={16} />
-                <span className="hidden sm:inline">Новая задача</span>
-              </Button>
+              {tab !== "documents" && (
+                <Button
+                  onClick={() => {
+                    setEditingTask(null);
+                    setFormOpen(true);
+                  }}
+                  size="sm"
+                  className="gap-1.5"
+                >
+                  <Icon name="Plus" size={16} />
+                  <span className="hidden sm:inline">Новая задача</span>
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
@@ -206,21 +209,23 @@ const Index = () => {
       </header>
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6">
-        <div className="mb-5">
-          <div className="relative">
-            <Icon
-              name="Search"
-              size={16}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-            />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Поиск задач..."
-              className="pl-9 bg-card"
-            />
+        {tab !== "documents" && (
+          <div className="mb-5">
+            <div className="relative">
+              <Icon
+                name="Search"
+                size={16}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+              />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Поиск задач..."
+                className="pl-9 bg-card"
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
           <TabsList className="w-full justify-start overflow-x-auto flex-nowrap mb-6 h-auto p-1 bg-muted/50">
@@ -252,6 +257,10 @@ const Index = () => {
             <TabsTrigger value="archive" className="gap-1.5 text-xs sm:text-sm">
               <Icon name="Archive" size={14} />
               Архив
+            </TabsTrigger>
+            <TabsTrigger value="documents" className="gap-1.5 text-xs sm:text-sm">
+              <Icon name="FileText" size={14} />
+              Документы
             </TabsTrigger>
           </TabsList>
 
@@ -323,6 +332,10 @@ const Index = () => {
 
           <TabsContent value="archive">
             {renderTaskList(archivedTasks, "Archive", "Архив пуст")}
+          </TabsContent>
+
+          <TabsContent value="documents">
+            <DocumentsPage />
           </TabsContent>
         </Tabs>
       </main>

@@ -18,6 +18,7 @@ export interface Document {
 export interface Recipient {
   id: string;
   fullName: string;
+  organization: string;
   position: string;
   address: string;
   emails: string[];

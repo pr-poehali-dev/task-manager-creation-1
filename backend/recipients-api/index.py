@@ -55,6 +55,7 @@ def row_to_recipient(r):
     return {
         'id': str(r['id']),
         'fullName': r['full_name'],
+        'organization': r.get('organization') or '',
         'position': r['position'],
         'address': r['address'],
         'emails': list(emails),
@@ -66,7 +67,7 @@ def emails_to_pg_array(emails):
     return "ARRAY[%s]::TEXT[]" % ','.join("'%s'" % e for e in safe) if safe else "ARRAY[]::TEXT[]"
 
 def handler(event, context):
-    """API для справочника адресатов: ФИО, должность, адрес, несколько email"""
+    """API для справочника адресатов: ФИО, организация, должность, адрес, несколько email"""
     if event.get('httpMethod') == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS_HEADERS, 'body': ''}
 
@@ -86,7 +87,7 @@ def handler(event, context):
 
         if method == 'GET':
             cur.execute(
-                "SELECT id, full_name, position, address, emails, created_at "
+                "SELECT id, full_name, organization, position, address, emails, created_at "
                 "FROM %s.recipients WHERE user_id = '%s' ORDER BY full_name ASC"
                 % (SCHEMA, uid)
             )
@@ -96,6 +97,7 @@ def handler(event, context):
         elif method == 'POST':
             body = json.loads(event.get('body', '{}'))
             full_name = body.get('fullName', '').replace("'", "''")
+            organization = body.get('organization', '').replace("'", "''")
             position = body.get('position', '').replace("'", "''")
             address = body.get('address', '').replace("'", "''")
             emails = body.get('emails', [])
@@ -107,10 +109,10 @@ def handler(event, context):
 
             emails_sql = emails_to_pg_array(emails)
             cur.execute(
-                "INSERT INTO %s.recipients (user_id, full_name, position, address, emails) "
-                "VALUES ('%s', '%s', '%s', '%s', %s) "
-                "RETURNING id, full_name, position, address, emails, created_at"
-                % (SCHEMA, uid, full_name, position, address, emails_sql)
+                "INSERT INTO %s.recipients (user_id, full_name, organization, position, address, emails) "
+                "VALUES ('%s', '%s', '%s', '%s', '%s', %s) "
+                "RETURNING id, full_name, organization, position, address, emails, created_at"
+                % (SCHEMA, uid, full_name, organization, position, address, emails_sql)
             )
             r = cur.fetchone()
             return {'statusCode': 201, 'headers': CORS_HEADERS, 'body': json.dumps(row_to_recipient(r))}
@@ -121,6 +123,8 @@ def handler(event, context):
             sets = ["updated_at = NOW()"]
             if 'fullName' in body:
                 sets.append("full_name = '%s'" % body['fullName'].replace("'", "''"))
+            if 'organization' in body:
+                sets.append("organization = '%s'" % body['organization'].replace("'", "''"))
             if 'position' in body:
                 sets.append("position = '%s'" % body['position'].replace("'", "''"))
             if 'address' in body:
@@ -133,7 +137,7 @@ def handler(event, context):
 
             cur.execute(
                 "UPDATE %s.recipients SET %s WHERE id = '%s' AND user_id = '%s' "
-                "RETURNING id, full_name, position, address, emails, created_at"
+                "RETURNING id, full_name, organization, position, address, emails, created_at"
                 % (SCHEMA, ', '.join(sets), rec_id, uid)
             )
             r = cur.fetchone()

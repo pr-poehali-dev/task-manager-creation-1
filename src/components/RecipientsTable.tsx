@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -48,6 +48,16 @@ function RecipientView({ recipient, onClose, onEdit }: {
         </DialogHeader>
 
         <div className="space-y-4">
+          {recipient.organization && (
+            <div>
+              <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Организация</div>
+              <div className="flex items-center justify-between gap-2 p-2 rounded-md bg-muted/40">
+                <span className="text-sm font-medium">{recipient.organization}</span>
+                <CopyButton text={recipient.organization} />
+              </div>
+            </div>
+          )}
+
           {recipient.position && (
             <div>
               <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Должность</div>
@@ -105,12 +115,13 @@ function RecipientView({ recipient, onClose, onEdit }: {
 // ── Форма редактирования / добавления ──────────────────
 interface RecipientFormData {
   fullName: string;
+  organization: string;
   position: string;
   address: string;
   emails: string[];
 }
 
-const EMPTY_FORM: RecipientFormData = { fullName: "", position: "", address: "", emails: [""] };
+const EMPTY_FORM: RecipientFormData = { fullName: "", organization: "", position: "", address: "", emails: [""] };
 
 function RecipientForm({ initial, onSave, onCancel, saving }: {
   initial: RecipientFormData;
@@ -146,6 +157,15 @@ function RecipientForm({ initial, onSave, onCancel, saving }: {
             value={form.fullName}
             onChange={(e) => setField("fullName", e.target.value)}
             placeholder="Иванов Иван Иванович"
+          />
+        </div>
+        <div className="col-span-2">
+          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Организация</label>
+          <Input
+            className="mt-1 h-8 text-sm"
+            value={form.organization}
+            onChange={(e) => setField("organization", e.target.value)}
+            placeholder="ООО «Ромашка»"
           />
         </div>
         <div className="col-span-2">
@@ -222,7 +242,13 @@ function RecipientEditDialog({ recipient, onClose, onSaved }: {
   const [saving, setSaving] = useState(false);
 
   const initial: RecipientFormData = recipient
-    ? { fullName: recipient.fullName, position: recipient.position, address: recipient.address, emails: recipient.emails.length ? recipient.emails : [""] }
+    ? {
+        fullName: recipient.fullName,
+        organization: recipient.organization || "",
+        position: recipient.position,
+        address: recipient.address,
+        emails: recipient.emails.length ? recipient.emails : [""],
+      }
     : EMPTY_FORM;
 
   const handleSave = async (data: RecipientFormData) => {
@@ -259,10 +285,34 @@ export default function RecipientsTable() {
   const [loading, setLoading] = useState(true);
   const [viewing, setViewing] = useState<Recipient | null>(null);
   const [editing, setEditing] = useState<Recipient | null | "new">(null);
+  const [search, setSearch] = useState("");
+  const [orgFilter, setOrgFilter] = useState("");
 
   useEffect(() => {
     fetchRecipients().then((data) => { setRows(data); setLoading(false); });
   }, []);
+
+  const organizations = useMemo(() => {
+    const set = new Set<string>();
+    rows.forEach((r) => { if (r.organization) set.add(r.organization); });
+    return Array.from(set).sort();
+  }, [rows]);
+
+  const filtered = useMemo(() => {
+    let result = rows;
+    if (orgFilter) result = result.filter((r) => r.organization === orgFilter);
+    if (search) {
+      const q = search.toLowerCase();
+      result = result.filter(
+        (r) =>
+          r.fullName.toLowerCase().includes(q) ||
+          r.organization.toLowerCase().includes(q) ||
+          r.position.toLowerCase().includes(q) ||
+          r.emails.some((e) => e.toLowerCase().includes(q))
+      );
+    }
+    return result;
+  }, [rows, search, orgFilter]);
 
   const handleSaved = (r: Recipient) => {
     setRows((prev) => {
@@ -287,38 +337,81 @@ export default function RecipientsTable() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-muted-foreground">
-          {rows.length} {rows.length === 1 ? "адресат" : rows.length < 5 ? "адресата" : "адресатов"}
-        </span>
-        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setEditing("new")}>
+      {/* Панель управления */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-40">
+          <Icon name="Search" size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Поиск по имени, должности, email..."
+            className="pl-8 h-8 text-sm"
+          />
+        </div>
+
+        {organizations.length > 0 && (
+          <div className="flex items-center gap-1 flex-wrap">
+            <button
+              onClick={() => setOrgFilter("")}
+              className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                !orgFilter ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
+              }`}
+            >
+              Все
+            </button>
+            {organizations.map((org) => (
+              <button
+                key={org}
+                onClick={() => setOrgFilter(org === orgFilter ? "" : org)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                  orgFilter === org ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                {org}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <Button size="sm" variant="outline" className="gap-1.5 ml-auto" onClick={() => setEditing("new")}>
           <Icon name="UserPlus" size={14} />
           Добавить
         </Button>
+      </div>
+
+      <div className="text-xs text-muted-foreground">
+        {filtered.length} {filtered.length === 1 ? "адресат" : filtered.length < 5 ? "адресата" : "адресатов"}
+        {(search || orgFilter) && rows.length !== filtered.length && ` из ${rows.length}`}
       </div>
 
       <div className="border rounded-lg overflow-hidden">
         {/* Header */}
         <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border-b">
           <span className="flex-[2] text-xs font-semibold text-muted-foreground uppercase tracking-wide">ФИО</span>
+          <span className="flex-[2] text-xs font-semibold text-muted-foreground uppercase tracking-wide">Организация</span>
           <span className="flex-[2] text-xs font-semibold text-muted-foreground uppercase tracking-wide">Должность</span>
           <span className="flex-[2] text-xs font-semibold text-muted-foreground uppercase tracking-wide">Email</span>
           <span className="w-24" />
         </div>
 
-        {rows.length === 0 ? (
+        {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
             <Icon name="Users" size={36} className="mb-2 opacity-20" />
-            <p className="text-sm">Список адресатов пуст</p>
+            <p className="text-sm">{rows.length === 0 ? "Список адресатов пуст" : "Нет подходящих адресатов"}</p>
           </div>
         ) : (
-          rows.map((row, i) => (
+          filtered.map((row, i) => (
             <div
               key={row.id}
-              className={`flex items-center gap-2 px-3 py-2.5 ${i < rows.length - 1 ? "border-b" : ""} hover:bg-muted/30 transition-colors group`}
+              className={`flex items-center gap-2 px-3 py-2.5 ${i < filtered.length - 1 ? "border-b" : ""} hover:bg-muted/30 transition-colors group`}
             >
               <span className="flex-[2] text-sm font-medium truncate">{row.fullName}</span>
-              <span className="flex-[2] text-sm text-muted-foreground truncate">{row.position || <span className="opacity-30">—</span>}</span>
+              <span className="flex-[2] text-sm text-muted-foreground truncate">
+                {row.organization || <span className="opacity-30">—</span>}
+              </span>
+              <span className="flex-[2] text-sm text-muted-foreground truncate">
+                {row.position || <span className="opacity-30">—</span>}
+              </span>
               <div className="flex-[2] min-w-0">
                 {row.emails.length === 0 ? (
                   <span className="text-sm text-muted-foreground/30">—</span>

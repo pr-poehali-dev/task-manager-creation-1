@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -36,16 +36,28 @@ function RecipientPicker({ recipients, onInsert, onClose }: {
   onClose: () => void;
 }) {
   const [search, setSearch] = useState("");
+  const [orgFilter, setOrgFilter] = useState("");
   const [selected, setSelected] = useState<Recipient | null>(null);
   const [checkedEmails, setCheckedEmails] = useState<Set<string>>(new Set());
 
-  const filtered = search
-    ? recipients.filter(
-        (r) =>
-          r.fullName.toLowerCase().includes(search.toLowerCase()) ||
-          r.position.toLowerCase().includes(search.toLowerCase())
-      )
-    : recipients;
+  const organizations = useMemo(() => {
+    const set = new Set<string>();
+    recipients.forEach((r) => { if (r.organization) set.add(r.organization); });
+    return Array.from(set).sort();
+  }, [recipients]);
+
+  const filtered = recipients.filter((r) => {
+    if (orgFilter && r.organization !== orgFilter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      return (
+        r.fullName.toLowerCase().includes(q) ||
+        (r.organization || "").toLowerCase().includes(q) ||
+        r.position.toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
 
   const selectRecipient = (r: Recipient) => {
     setSelected(r);
@@ -68,6 +80,7 @@ function RecipientPicker({ recipients, onInsert, onClose }: {
   const buildText = () => {
     if (!selected) return "";
     const lines: string[] = [];
+    if (selected.organization) lines.push(selected.organization);
     if (selected.fullName) lines.push(selected.fullName);
     if (selected.position) lines.push(selected.position);
     if (selected.address) lines.push(selected.address);
@@ -86,11 +99,30 @@ function RecipientPicker({ recipients, onInsert, onClose }: {
           </DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-0 flex-1 overflow-hidden">
-          <div className="px-4 py-2 border-b">
+          <div className="px-4 py-2 border-b space-y-2">
             <div className="relative">
               <Icon name="Search" size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Поиск..." className="pl-7 h-7 text-sm" />
             </div>
+            {organizations.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                <button
+                  onClick={() => setOrgFilter("")}
+                  className={`px-2 py-0.5 rounded-full text-[11px] font-medium transition-colors ${!orgFilter ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                >
+                  Все
+                </button>
+                {organizations.map((org) => (
+                  <button
+                    key={org}
+                    onClick={() => setOrgFilter(org === orgFilter ? "" : org)}
+                    className={`px-2 py-0.5 rounded-full text-[11px] font-medium transition-colors ${orgFilter === org ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                  >
+                    {org}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex flex-1 overflow-hidden">
             <div className="w-1/2 border-r overflow-y-auto">
@@ -107,6 +139,7 @@ function RecipientPicker({ recipients, onInsert, onClose }: {
                     className={`w-full text-left px-3 py-2.5 border-b last:border-b-0 transition-colors ${selected?.id === r.id ? "bg-primary/5 border-l-2 border-l-primary" : "hover:bg-muted/40"}`}
                   >
                     <div className="text-sm font-medium truncate">{r.fullName}</div>
+                    {r.organization && <div className="text-[10px] text-primary/70 font-medium truncate mt-0.5">{r.organization}</div>}
                     {r.position && <div className="text-[11px] text-muted-foreground truncate mt-0.5">{r.position}</div>}
                   </button>
                 ))
@@ -120,6 +153,12 @@ function RecipientPicker({ recipients, onInsert, onClose }: {
                 </div>
               ) : (
                 <div className="p-3 space-y-3">
+                  {selected.organization && (
+                    <div>
+                      <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Организация</div>
+                      <p className="text-xs font-medium">{selected.organization}</p>
+                    </div>
+                  )}
                   {selected.address && (
                     <div>
                       <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Адрес</div>

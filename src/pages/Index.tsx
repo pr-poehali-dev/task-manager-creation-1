@@ -9,6 +9,7 @@ import StatsPanel from "@/components/StatsPanel";
 import CalendarView from "@/components/CalendarView";
 import AuthScreen from "@/components/AuthScreen";
 import DocumentsPage from "@/components/DocumentsPage";
+import ReportPage from "@/components/ReportPage";
 import type { Task, Priority } from "@/lib/task-store";
 import {
   fetchTasks,
@@ -20,7 +21,7 @@ import {
 import { checkAuth, clearToken } from "@/lib/auth";
 import type { User } from "@/lib/auth";
 
-type Tab = "active" | "completed" | "priority" | "deadlines" | "stats" | "archive" | "documents";
+type Tab = "active" | "completed" | "priority" | "deadlines" | "stats" | "archive" | "documents" | "report";
 
 const Index = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -182,7 +183,7 @@ const Index = () => {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {tab !== "documents" && (
+              {tab !== "documents" && tab !== "report" && (
                 <Button
                   onClick={() => {
                     setEditingTask(null);
@@ -209,7 +210,7 @@ const Index = () => {
       </header>
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6">
-        {tab !== "documents" && (
+        {tab !== "documents" && tab !== "report" && (
           <div className="mb-5">
             <div className="relative">
               <Icon
@@ -261,6 +262,10 @@ const Index = () => {
             <TabsTrigger value="documents" className="gap-1.5 text-xs sm:text-sm">
               <Icon name="FileText" size={14} />
               Документы
+            </TabsTrigger>
+            <TabsTrigger value="report" className="gap-1.5 text-xs sm:text-sm">
+              <Icon name="ClipboardList" size={14} />
+              Отчётность
             </TabsTrigger>
           </TabsList>
 
@@ -336,6 +341,10 @@ const Index = () => {
 
           <TabsContent value="documents">
             <DocumentsPage />
+          </TabsContent>
+
+          <TabsContent value="report">
+            <ReportPage />
           </TabsContent>
         </Tabs>
       </main>

@@ -71,6 +71,17 @@ const COLUMNS = [
   { key: "comment", label: "Комментарий", wide: true },
 ];
 
+// Short labels for form view
+const COLUMN_SHORT: Record<string, string> = {
+  serviceName: "Наименование услуг / работ",
+  operation: "Операции (действия)",
+  group: "Группа в отделе",
+  executor: "Исполнитель",
+  unit: "Единица измерения",
+  result: "Результат",
+  comment: "Комментарий",
+};
+
 function parseMonthYear(label: string): { year: number; month: number } {
   const months: Record<string, number> = {
     январ: 1, феврал: 2, март: 3, апрел: 4, май: 5, июн: 6,
@@ -86,12 +97,80 @@ function parseMonthYear(label: string): { year: number; month: number } {
   return { year, month };
 }
 
+// ─── Form card for a single row ───────────────────────────────────────────────
+function RowFormCard({
+  row,
+  index,
+  onUpdate,
+  onRemove,
+}: {
+  row: ReportRow;
+  index: number;
+  onUpdate: (id: number, field: keyof ReportRow, value: string) => void;
+  onRemove: (id: number) => void;
+}) {
+  const textareaFields: (keyof ReportRow)[] = ["serviceName", "operation", "comment"];
+
+  return (
+    <div className="rounded-xl border bg-card shadow-sm hover:shadow-md transition-shadow">
+      {/* Card header */}
+      <div className="flex items-center justify-between px-4 py-2.5 border-b bg-muted/30 rounded-t-xl">
+        <span className="text-xs font-semibold text-muted-foreground">Запись #{index + 1}</span>
+        <button
+          onClick={() => onRemove(row.id)}
+          className="text-muted-foreground hover:text-destructive transition-colors"
+          title="Удалить запись"
+        >
+          <Icon name="Trash2" size={14} />
+        </button>
+      </div>
+
+      {/* Fields grid */}
+      <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+        {COLUMNS.map((col) => {
+          const key = col.key as keyof ReportRow;
+          const isTextarea = textareaFields.includes(key);
+          return (
+            <div
+              key={col.key}
+              className={col.wide ? "md:col-span-2" : ""}
+            >
+              <label className="block text-[11px] font-medium text-muted-foreground mb-1 leading-snug">
+                {COLUMN_SHORT[col.key]}
+              </label>
+              {isTextarea ? (
+                <Textarea
+                  value={row[key]}
+                  onChange={(e) => onUpdate(row.id, key, e.target.value)}
+                  className="text-sm resize-none min-h-[72px]"
+                  placeholder={COLUMN_SHORT[col.key] + "..."}
+                />
+              ) : (
+                <Input
+                  value={row[key]}
+                  onChange={(e) => onUpdate(row.id, key, e.target.value)}
+                  className="text-sm h-9"
+                  placeholder={COLUMN_SHORT[col.key] + "..."}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main component ────────────────────────────────────────────────────────────
 export default function ReportPage() {
   const [rows, setRows] = useState<ReportRow[]>(DEFAULT_ROWS);
   const [month, setMonth] = useState("март 2026");
   const [department, setDepartment] = useState("отдела мониторинга геологической информации Управления архива и фондов ФГБУ «Росгеолфонд»");
   const [reportName, setReportName] = useState("Отчёт за март");
   const [currentId, setCurrentId] = useState<number | null>(null);
+
+  // View mode: "table" | "form"
+  const [viewMode, setViewMode] = useState<"table" | "form">("table");
 
   const [tree, setTree] = useState<ReportsTree>({});
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
@@ -309,6 +388,35 @@ export default function ReportPage() {
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {saveMessage && <span className="text-xs text-green-600 font-medium">{saveMessage}</span>}
+
+            {/* View mode toggle */}
+            <div className="flex items-center rounded-lg border bg-muted/40 p-0.5 gap-0.5">
+              <button
+                onClick={() => setViewMode("table")}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                  viewMode === "table"
+                    ? "bg-background shadow-sm text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title="Режим таблицы"
+              >
+                <Icon name="Table" size={13} />
+                Таблица
+              </button>
+              <button
+                onClick={() => setViewMode("form")}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                  viewMode === "form"
+                    ? "bg-background shadow-sm text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title="Режим карточек"
+              >
+                <Icon name="LayoutList" size={13} />
+                Карточки
+              </button>
+            </div>
+
             <Button variant="outline" size="sm" onClick={() => setSaveDialogOpen(true)} className="gap-1.5 h-8">
               <Icon name="Save" size={14} />
               {currentId ? "Обновить" : "Сохранить"}
@@ -350,71 +458,106 @@ export default function ReportPage() {
           </div>
         )}
 
-        {/* Таблица */}
-        <div className="rounded-lg border bg-card text-sm">
-          <div className="px-4 py-2.5 border-b bg-muted/30 flex items-center justify-between">
-            <p className="text-[11px] text-muted-foreground font-medium truncate">
-              Отчет к плану выполнения работ {department} за {month}
-            </p>
-            {loading && <Icon name="Loader2" size={14} className="animate-spin text-muted-foreground shrink-0 ml-2" />}
-          </div>
+        {/* ── TABLE MODE ─────────────────────────────────────────────────────── */}
+        {viewMode === "table" && (
+          <div className="rounded-lg border bg-card text-sm">
+            <div className="px-4 py-2.5 border-b bg-muted/30 flex items-center justify-between">
+              <p className="text-[11px] text-muted-foreground font-medium truncate">
+                Отчет к плану выполнения работ {department} за {month}
+              </p>
+              {loading && <Icon name="Loader2" size={14} className="animate-spin text-muted-foreground shrink-0 ml-2" />}
+            </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse min-w-[900px]">
-              <thead>
-                <tr className="bg-muted/40">
-                  {COLUMNS.map((col) => (
-                    <th key={col.key} className="border border-border px-2 py-2 text-[11px] font-semibold text-center align-middle leading-tight text-muted-foreground" style={{ minWidth: col.wide ? 200 : 110 }}>
-                      {col.label}
-                    </th>
-                  ))}
-                  <th className="border border-border px-2 py-2 w-8"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id} className="hover:bg-muted/10 transition-colors group">
-                    <>
-                      <td className="border border-border p-1 align-top">
-                        <Textarea value={row.serviceName} onChange={(e) => updateCell(row.id, "serviceName", e.target.value)} className="min-h-[60px] text-xs resize-none border-0 bg-transparent p-1 focus-visible:ring-0 focus-visible:ring-offset-0 w-full" placeholder="Наименование..." />
-                      </td>
-                      <td className="border border-border p-1 align-top">
-                        <Textarea value={row.operation} onChange={(e) => updateCell(row.id, "operation", e.target.value)} className="min-h-[60px] text-xs resize-none border-0 bg-transparent p-1 focus-visible:ring-0 focus-visible:ring-offset-0 w-full" placeholder="Операция..." />
-                      </td>
-                      <td className="border border-border p-1 align-top">
-                        <Input value={row.group} onChange={(e) => updateCell(row.id, "group", e.target.value)} className="h-auto min-h-[60px] text-xs border-0 bg-transparent p-1 focus-visible:ring-0 focus-visible:ring-offset-0" placeholder="Группа..." />
-                      </td>
-                      <td className="border border-border p-1 align-top">
-                        <Input value={row.executor} onChange={(e) => updateCell(row.id, "executor", e.target.value)} className="h-auto min-h-[60px] text-xs border-0 bg-transparent p-1 focus-visible:ring-0 focus-visible:ring-offset-0" placeholder="Исполнитель..." />
-                      </td>
-                      <td className="border border-border p-1 align-top">
-                        <Input value={row.unit} onChange={(e) => updateCell(row.id, "unit", e.target.value)} className="h-auto min-h-[60px] text-xs border-0 bg-transparent p-1 focus-visible:ring-0 focus-visible:ring-offset-0" placeholder="Ед. изм..." />
-                      </td>
-                      <td className="border border-border p-1 align-top">
-                        <Input value={row.result} onChange={(e) => updateCell(row.id, "result", e.target.value)} className="h-auto min-h-[60px] text-xs border-0 bg-transparent p-1 focus-visible:ring-0 focus-visible:ring-offset-0" placeholder="Результат..." />
-                      </td>
-                      <td className="border border-border p-1 align-top">
-                        <Textarea value={row.comment} onChange={(e) => updateCell(row.id, "comment", e.target.value)} className="min-h-[60px] text-xs resize-none border-0 bg-transparent p-1 focus-visible:ring-0 focus-visible:ring-offset-0 w-full" placeholder="Комментарий..." />
-                      </td>
-                    </>
-                    <td className="border border-border p-1 align-middle text-center">
-                      <button onClick={() => removeRow(row.id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive">
-                        <Icon name="X" size={13} />
-                      </button>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse min-w-[900px]">
+                <thead>
+                  <tr className="bg-muted/40">
+                    {COLUMNS.map((col) => (
+                      <th key={col.key} className="border border-border px-2 py-2 text-[11px] font-semibold text-center align-middle leading-tight text-muted-foreground" style={{ minWidth: col.wide ? 200 : 110 }}>
+                        {col.label}
+                      </th>
+                    ))}
+                    <th className="border border-border px-2 py-2 w-8"></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.id} className="hover:bg-muted/10 transition-colors group">
+                      <>
+                        <td className="border border-border p-1 align-top">
+                          <Textarea value={row.serviceName} onChange={(e) => updateCell(row.id, "serviceName", e.target.value)} className="min-h-[60px] text-xs resize-none border-0 bg-transparent p-1 focus-visible:ring-0 focus-visible:ring-offset-0 w-full" placeholder="Наименование..." />
+                        </td>
+                        <td className="border border-border p-1 align-top">
+                          <Textarea value={row.operation} onChange={(e) => updateCell(row.id, "operation", e.target.value)} className="min-h-[60px] text-xs resize-none border-0 bg-transparent p-1 focus-visible:ring-0 focus-visible:ring-offset-0 w-full" placeholder="Операция..." />
+                        </td>
+                        <td className="border border-border p-1 align-top">
+                          <Input value={row.group} onChange={(e) => updateCell(row.id, "group", e.target.value)} className="h-auto min-h-[60px] text-xs border-0 bg-transparent p-1 focus-visible:ring-0 focus-visible:ring-offset-0" placeholder="Группа..." />
+                        </td>
+                        <td className="border border-border p-1 align-top">
+                          <Input value={row.executor} onChange={(e) => updateCell(row.id, "executor", e.target.value)} className="h-auto min-h-[60px] text-xs border-0 bg-transparent p-1 focus-visible:ring-0 focus-visible:ring-offset-0" placeholder="Исполнитель..." />
+                        </td>
+                        <td className="border border-border p-1 align-top">
+                          <Input value={row.unit} onChange={(e) => updateCell(row.id, "unit", e.target.value)} className="h-auto min-h-[60px] text-xs border-0 bg-transparent p-1 focus-visible:ring-0 focus-visible:ring-offset-0" placeholder="Ед. изм..." />
+                        </td>
+                        <td className="border border-border p-1 align-top">
+                          <Input value={row.result} onChange={(e) => updateCell(row.id, "result", e.target.value)} className="h-auto min-h-[60px] text-xs border-0 bg-transparent p-1 focus-visible:ring-0 focus-visible:ring-offset-0" placeholder="Результат..." />
+                        </td>
+                        <td className="border border-border p-1 align-top">
+                          <Textarea value={row.comment} onChange={(e) => updateCell(row.id, "comment", e.target.value)} className="min-h-[60px] text-xs resize-none border-0 bg-transparent p-1 focus-visible:ring-0 focus-visible:ring-offset-0 w-full" placeholder="Комментарий..." />
+                        </td>
+                      </>
+                      <td className="border border-border p-1 align-middle text-center">
+                        <button onClick={() => removeRow(row.id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive">
+                          <Icon name="X" size={13} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-          <div className="px-4 py-2.5 border-t">
-            <Button variant="ghost" size="sm" onClick={addRow} className="gap-1.5 text-xs h-7">
-              <Icon name="Plus" size={13} />
-              Добавить строку
-            </Button>
+            <div className="px-4 py-2.5 border-t">
+              <Button variant="ghost" size="sm" onClick={addRow} className="gap-1.5 text-xs h-7">
+                <Icon name="Plus" size={13} />
+                Добавить строку
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* ── FORM / CARDS MODE ──────────────────────────────────────────────── */}
+        {viewMode === "form" && (
+          <div className="space-y-3">
+            {/* Header info */}
+            <div className="rounded-lg border bg-muted/20 px-4 py-2.5 flex items-center gap-2">
+              {loading && <Icon name="Loader2" size={14} className="animate-spin text-muted-foreground shrink-0" />}
+              <p className="text-[11px] text-muted-foreground font-medium">
+                Отчет к плану выполнения работ <span className="text-foreground">{department}</span> за <span className="text-foreground">{month}</span>
+              </p>
+            </div>
+
+            {/* Row cards */}
+            {rows.map((row, index) => (
+              <RowFormCard
+                key={row.id}
+                row={row}
+                index={index}
+                onUpdate={updateCell}
+                onRemove={removeRow}
+              />
+            ))}
+
+            {/* Add row button */}
+            <button
+              onClick={addRow}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-border text-muted-foreground hover:border-primary/50 hover:text-primary hover:bg-primary/5 transition-all text-sm font-medium"
+            >
+              <Icon name="Plus" size={16} />
+              Добавить запись
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

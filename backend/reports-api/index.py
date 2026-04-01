@@ -52,18 +52,49 @@ def handler(event: dict, context) -> dict:
     method = event.get('httpMethod', 'GET')
     path = event.get('path', '/')
     parts = [p for p in path.strip('/').split('/') if p]
-    report_id = parts[-1] if len(parts) >= 2 else None
+    # parts[0] = 'reports-api', parts[1] = id or 'by-period'
+    sub = parts[1] if len(parts) >= 2 else None
 
     conn = get_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
-        # GET /reports-api — список всех отчётов (структура год→месяц)
-        if method == 'GET' and not report_id:
+        # GET /reports-api/by-period?year=2026&month=3 — все отчёты за период (для группового экспорта)
+        if method == 'GET' and sub == 'by-period':
+            params = event.get('queryStringParameters') or {}
+            year = int(params.get('year', 2026))
+            month = int(params.get('month', 1))
             cur.execute("""
-                SELECT id, name, report_year, report_month, month_label, department, created_at, updated_at
+                SELECT id, name, report_year, report_month, month_label, department,
+                       employee_name, rows_data, created_at, updated_at
                 FROM reports
-                ORDER BY report_year DESC, report_month DESC, created_at DESC
+                WHERE report_year = %s AND report_month = %s
+                ORDER BY employee_name ASC, created_at ASC
+            """, (year, month))
+            rows = cur.fetchall()
+            result = []
+            for r in rows:
+                result.append({
+                    'id': r['id'],
+                    'name': r['name'],
+                    'report_year': r['report_year'],
+                    'report_month': r['report_month'],
+                    'month_label': r['month_label'],
+                    'department': r['department'],
+                    'employee_name': r['employee_name'] or '',
+                    'rows_data': r['rows_data'] if isinstance(r['rows_data'], list) else json.loads(r['rows_data'] or '[]'),
+                    'created_at': r['created_at'].isoformat() if r['created_at'] else None,
+                    'updated_at': r['updated_at'].isoformat() if r['updated_at'] else None,
+                })
+            return {'statusCode': 200, 'headers': CORS_HEADERS, 'body': json.dumps(result)}
+
+        # GET /reports-api — список всех отчётов (структура год→месяц)
+        if method == 'GET' and not sub:
+            cur.execute("""
+                SELECT id, name, report_year, report_month, month_label, department,
+                       employee_name, created_at, updated_at
+                FROM reports
+                ORDER BY report_year DESC, report_month DESC, employee_name ASC, created_at DESC
             """)
             rows = cur.fetchall()
             result = {}
@@ -79,14 +110,15 @@ def handler(event: dict, context) -> dict:
                     'name': r['name'],
                     'month_label': r['month_label'],
                     'department': r['department'],
+                    'employee_name': r['employee_name'] or '',
                     'created_at': r['created_at'].isoformat() if r['created_at'] else None,
                     'updated_at': r['updated_at'].isoformat() if r['updated_at'] else None,
                 })
             return {'statusCode': 200, 'headers': CORS_HEADERS, 'body': json.dumps(result)}
 
         # GET /reports-api/{id} — загрузить отчёт
-        if method == 'GET' and report_id:
-            cur.execute("SELECT * FROM reports WHERE id = %s", (report_id,))
+        if method == 'GET' and sub:
+            cur.execute("SELECT * FROM reports WHERE id = %s", (sub,))
             r = cur.fetchone()
             if not r:
                 return {'statusCode': 404, 'headers': CORS_HEADERS, 'body': json.dumps({'error': 'Not found'})}
@@ -97,6 +129,7 @@ def handler(event: dict, context) -> dict:
                 'report_month': r['report_month'],
                 'month_label': r['month_label'],
                 'department': r['department'],
+                'employee_name': r['employee_name'] or '',
                 'rows_data': r['rows_data'],
                 'created_at': r['created_at'].isoformat() if r['created_at'] else None,
                 'updated_at': r['updated_at'].isoformat() if r['updated_at'] else None,
@@ -110,37 +143,39 @@ def handler(event: dict, context) -> dict:
             report_month = int(body.get('report_month', 1))
             month_label = body.get('month_label', '')
             department = body.get('department', '')
+            employee_name = body.get('employee_name', '')
             rows_data = json.dumps(body.get('rows_data', []), ensure_ascii=False)
 
             cur.execute("""
-                INSERT INTO reports (name, report_year, report_month, month_label, department, rows_data)
-                VALUES (%s, %s, %s, %s, %s, %s) RETURNING id, created_at
-            """, (name, report_year, report_month, month_label, department, rows_data))
+                INSERT INTO reports (name, report_year, report_month, month_label, department, employee_name, rows_data)
+                VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id, created_at
+            """, (name, report_year, report_month, month_label, department, employee_name, rows_data))
             row = cur.fetchone()
             conn.commit()
             return {'statusCode': 201, 'headers': CORS_HEADERS, 'body': json.dumps({'id': row['id'], 'created_at': row['created_at'].isoformat()})}
 
         # PUT /reports-api/{id} — обновить отчёт
-        if method == 'PUT' and report_id:
+        if method == 'PUT' and sub:
             body = json.loads(event.get('body') or '{}')
             name = body.get('name', 'Отчёт')
             report_year = int(body.get('report_year', 2026))
             report_month = int(body.get('report_month', 1))
             month_label = body.get('month_label', '')
             department = body.get('department', '')
+            employee_name = body.get('employee_name', '')
             rows_data = json.dumps(body.get('rows_data', []), ensure_ascii=False)
 
             cur.execute("""
                 UPDATE reports SET name=%s, report_year=%s, report_month=%s, month_label=%s,
-                department=%s, rows_data=%s, updated_at=NOW()
+                department=%s, employee_name=%s, rows_data=%s, updated_at=NOW()
                 WHERE id=%s
-            """, (name, report_year, report_month, month_label, department, rows_data, report_id))
+            """, (name, report_year, report_month, month_label, department, employee_name, rows_data, sub))
             conn.commit()
             return {'statusCode': 200, 'headers': CORS_HEADERS, 'body': json.dumps({'ok': True})}
 
         # DELETE /reports-api/{id} — удалить отчёт
-        if method == 'DELETE' and report_id:
-            cur.execute("DELETE FROM reports WHERE id = %s", (report_id,))
+        if method == 'DELETE' and sub:
+            cur.execute("DELETE FROM reports WHERE id = %s", (sub,))
             conn.commit()
             return {'statusCode': 200, 'headers': CORS_HEADERS, 'body': json.dumps({'ok': True})}
 

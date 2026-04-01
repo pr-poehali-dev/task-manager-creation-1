@@ -31,11 +31,20 @@ interface SavedReport {
   name: string;
   month_label: string;
   department: string;
+  employee_name: string;
   created_at: string;
   updated_at: string;
 }
 
+// year → monthKey → reports[]
 type ReportsTree = Record<string, Record<string, SavedReport[]>>;
+
+// Full report with rows data (for department export)
+interface FullReport extends SavedReport {
+  report_year: number;
+  report_month: number;
+  rows_data: ReportRow[];
+}
 
 const DEFAULT_ROWS: ReportRow[] = [
   {
@@ -71,7 +80,6 @@ const COLUMNS = [
   { key: "comment", label: "Комментарий", wide: true },
 ];
 
-// Short labels for form view
 const COLUMN_SHORT: Record<string, string> = {
   serviceName: "Наименование услуг / работ",
   operation: "Операции (действия)",
@@ -97,6 +105,34 @@ function parseMonthYear(label: string): { year: number; month: number } {
   return { year, month };
 }
 
+function buildEmployeeSheet(
+  ws: XLSX.WorkSheet,
+  report: FullReport,
+  startRow: number
+): number {
+  // Returns next available row
+  const employeeTitle = report.employee_name
+    ? `Сотрудник: ${report.employee_name}`
+    : report.name;
+
+  const titleRow = [employeeTitle];
+  XLSX.utils.sheet_add_aoa(ws, [titleRow], { origin: { r: startRow, c: 0 } });
+  ws["!merges"] = ws["!merges"] || [];
+  ws["!merges"].push({ s: { r: startRow, c: 0 }, e: { r: startRow, c: 6 } });
+
+  const headers = COLUMNS.map((c) => c.label);
+  XLSX.utils.sheet_add_aoa(ws, [headers], { origin: { r: startRow + 1, c: 0 } });
+
+  const dataRows = report.rows_data.map((r) => [
+    r.serviceName, r.operation, r.group, r.executor, r.unit, r.result, r.comment,
+  ]);
+  if (dataRows.length > 0) {
+    XLSX.utils.sheet_add_aoa(ws, dataRows, { origin: { r: startRow + 2, c: 0 } });
+  }
+
+  return startRow + 2 + dataRows.length + 2; // +2 for gap between employees
+}
+
 // ─── Form card for a single row ───────────────────────────────────────────────
 function RowFormCard({
   row,
@@ -113,7 +149,6 @@ function RowFormCard({
 
   return (
     <div className="rounded-xl border bg-card shadow-sm hover:shadow-md transition-shadow">
-      {/* Card header */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b bg-muted/30 rounded-t-xl">
         <span className="text-xs font-semibold text-muted-foreground">Запись #{index + 1}</span>
         <button
@@ -124,17 +159,12 @@ function RowFormCard({
           <Icon name="Trash2" size={14} />
         </button>
       </div>
-
-      {/* Fields grid */}
       <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
         {COLUMNS.map((col) => {
           const key = col.key as keyof ReportRow;
           const isTextarea = textareaFields.includes(key);
           return (
-            <div
-              key={col.key}
-              className={col.wide ? "md:col-span-2" : ""}
-            >
+            <div key={col.key} className={col.wide ? "md:col-span-2" : ""}>
               <label className="block text-[11px] font-medium text-muted-foreground mb-1 leading-snug">
                 {COLUMN_SHORT[col.key]}
               </label>
@@ -163,23 +193,32 @@ function RowFormCard({
 
 // ─── Main component ────────────────────────────────────────────────────────────
 export default function ReportPage() {
+  // Current report data
   const [rows, setRows] = useState<ReportRow[]>(DEFAULT_ROWS);
   const [month, setMonth] = useState("март 2026");
   const [department, setDepartment] = useState("отдела мониторинга геологической информации Управления архива и фондов ФГБУ «Росгеолфонд»");
   const [reportName, setReportName] = useState("Отчёт за март");
+  const [employeeName, setEmployeeName] = useState("");
   const [currentId, setCurrentId] = useState<number | null>(null);
 
-  // View mode: "table" | "form"
+  // View mode
   const [viewMode, setViewMode] = useState<"table" | "form">("table");
 
+  // Archive tree
   const [tree, setTree] = useState<ReportsTree>({});
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
 
+  // UI state
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [exportingDept, setExportingDept] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
+
+  // Add employee dialog
+  const [addEmployeeOpen, setAddEmployeeOpen] = useState(false);
+  const [newEmployeeName, setNewEmployeeName] = useState("");
 
   const loadTree = useCallback(async () => {
     const res = await fetch(API, { headers: await authHeaders() });
@@ -203,8 +242,8 @@ export default function ReportPage() {
   };
 
   const addRow = () => {
-    const newId = Math.max(...rows.map((r) => r.id)) + 1;
-    setRows((prev) => [...prev, { id: newId, serviceName: "", operation: "", group: "", executor: "", unit: "", result: "", comment: "" }]);
+    const maxId = rows.length > 0 ? Math.max(...rows.map((r) => r.id)) : 0;
+    setRows((prev) => [...prev, { id: maxId + 1, serviceName: "", operation: "", group: "", executor: "", unit: "", result: "", comment: "" }]);
   };
 
   const removeRow = (id: number) => setRows((prev) => prev.filter((r) => r.id !== id));
@@ -214,6 +253,7 @@ export default function ReportPage() {
     setMonth("март 2026");
     setDepartment("отдела мониторинга геологической информации Управления архива и фондов ФГБУ «Росгеолфонд»");
     setReportName("Отчёт за март");
+    setEmployeeName("");
     setCurrentId(null);
   };
 
@@ -226,6 +266,7 @@ export default function ReportPage() {
       setMonth(data.month_label);
       setDepartment(data.department);
       setReportName(data.name);
+      setEmployeeName(data.employee_name || "");
       setCurrentId(id);
     }
     setLoading(false);
@@ -240,6 +281,7 @@ export default function ReportPage() {
       report_month: monthNum,
       month_label: month,
       department,
+      employee_name: employeeName,
       rows_data: rows,
     };
     const method = currentId ? "PUT" : "POST";
@@ -270,8 +312,10 @@ export default function ReportPage() {
     await loadTree();
   };
 
+  // Export single employee report to Excel
   const exportToExcel = () => {
-    const title = `Отчет к плану выполнения работ ${department} за ${month}`;
+    const empLabel = employeeName ? ` — ${employeeName}` : "";
+    const title = `Отчет к плану выполнения работ ${department} за ${month}${empLabel}`;
     const headers = COLUMNS.map((c) => c.label);
     const dataRows = rows.map((r) => [r.serviceName, r.operation, r.group, r.executor, r.unit, r.result, r.comment]);
     const wsData = [[title], [], headers, ...dataRows];
@@ -280,8 +324,78 @@ export default function ReportPage() {
     ws["!cols"] = [{ wch: 35 }, { wch: 40 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 35 }];
     ws["!rows"] = [{ hpt: 30 }, { hpt: 6 }, { hpt: 60 }];
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Отчёт");
-    XLSX.writeFile(wb, `Отчёт_${month.replace(" ", "_")}.xlsx`);
+    const sheetName = employeeName ? employeeName.slice(0, 31) : "Отчёт";
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    const fileName = employeeName
+      ? `Отчёт_${employeeName.replace(/\s+/g, "_")}_${month.replace(" ", "_")}.xlsx`
+      : `Отчёт_${month.replace(" ", "_")}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  };
+
+  // Export ALL employees for a given period (one sheet per employee)
+  const exportDepartmentExcel = async (year: string, monthKey: string) => {
+    setExportingDept(true);
+    try {
+      const yearNum = parseInt(year);
+      const monthNum = parseInt(monthKey);
+      const res = await fetch(`${API}/by-period?year=${yearNum}&month=${monthNum}`, {
+        headers: await authHeaders(),
+      });
+      if (!res.ok) {
+        setSaveMessage("Ошибка загрузки данных для экспорта");
+        setTimeout(() => setSaveMessage(""), 3000);
+        return;
+      }
+      const reports: FullReport[] = await res.json();
+      if (reports.length === 0) {
+        setSaveMessage("Нет отчётов для экспорта");
+        setTimeout(() => setSaveMessage(""), 3000);
+        return;
+      }
+
+      const wb = XLSX.utils.book_new();
+      const monthLabel = reports[0]?.month_label || `${MONTH_NAMES[monthNum]} ${year}`;
+      const dept = reports[0]?.department || "";
+
+      for (const report of reports) {
+        const empName = report.employee_name || report.name;
+        const sheetName = empName.slice(0, 31) || `Лист${reports.indexOf(report) + 1}`;
+
+        const title = `Отчет к плану выполнения работ ${dept} за ${monthLabel}`;
+        const empLine = report.employee_name ? `Сотрудник: ${report.employee_name}` : report.name;
+        const headers = COLUMNS.map((c) => c.label);
+        const dataRows = (report.rows_data || []).map((r) => [
+          r.serviceName, r.operation, r.group, r.executor, r.unit, r.result, r.comment,
+        ]);
+
+        const wsData = [[title], [empLine], [], headers, ...dataRows];
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        ws["!merges"] = [
+          { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
+          { s: { r: 1, c: 0 }, e: { r: 1, c: 6 } },
+        ];
+        ws["!cols"] = [{ wch: 35 }, { wch: 40 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 35 }];
+        ws["!rows"] = [{ hpt: 30 }, { hpt: 20 }, { hpt: 6 }, { hpt: 60 }];
+
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      }
+
+      const fileName = `Отчёт_отдел_${monthLabel.replace(" ", "_")}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+    } finally {
+      setExportingDept(false);
+    }
+  };
+
+  // Create new employee report for existing period/department
+  const createEmployeeReport = () => {
+    if (!newEmployeeName.trim()) return;
+    setRows(DEFAULT_ROWS.map((r) => ({ ...r, executor: newEmployeeName.trim() })));
+    setEmployeeName(newEmployeeName.trim());
+    setReportName(`Отчёт ${newEmployeeName.trim()} за ${month}`);
+    setCurrentId(null);
+    setAddEmployeeOpen(false);
+    setNewEmployeeName("");
   };
 
   const toggleYear = (year: string) => {
@@ -304,8 +418,8 @@ export default function ReportPage() {
 
   return (
     <div className="flex gap-4 h-full">
-      {/* Боковая панель — архив отчётов */}
-      <div className="w-56 shrink-0 flex flex-col gap-2">
+      {/* ── Боковая панель — архив отчётов ─────────────────────────────────── */}
+      <div className="w-60 shrink-0 flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Архив</span>
           <Button variant="ghost" size="sm" className="h-6 px-2 text-xs gap-1" onClick={newReport}>
@@ -324,6 +438,7 @@ export default function ReportPage() {
             <div className="py-1">
               {Object.keys(tree).sort((a, b) => Number(b) - Number(a)).map((year) => (
                 <div key={year}>
+                  {/* Year */}
                   <button
                     onClick={() => toggleYear(year)}
                     className="w-full flex items-center gap-1.5 px-3 py-1.5 hover:bg-muted/50 transition-colors"
@@ -335,33 +450,82 @@ export default function ReportPage() {
                   {expandedYears.has(year) && Object.keys(tree[year]).sort((a, b) => Number(b) - Number(a)).map((monthKey) => {
                     const treeKey = `${year}-${monthKey}`;
                     const monthNum = parseInt(monthKey);
+                    const reportsInMonth = tree[year][monthKey];
+
                     return (
                       <div key={monthKey}>
-                        <button
-                          onClick={() => toggleMonth(treeKey)}
-                          className="w-full flex items-center gap-1.5 pl-6 pr-3 py-1 hover:bg-muted/50 transition-colors"
-                        >
-                          <Icon name={expandedMonths.has(treeKey) ? "ChevronDown" : "ChevronRight"} size={11} className="text-muted-foreground shrink-0" />
-                          <span className="text-[11px] text-muted-foreground">{MONTH_NAMES[monthNum] || monthKey}</span>
-                          <span className="ml-auto text-[10px] text-muted-foreground/60">{tree[year][monthKey].length}</span>
-                        </button>
-
-                        {expandedMonths.has(treeKey) && tree[year][monthKey].map((r) => (
-                          <div
-                            key={r.id}
-                            className={`group flex items-center gap-1 pl-9 pr-2 py-1 cursor-pointer transition-colors ${currentId === r.id ? "bg-primary/8 border-l-2 border-l-primary" : "hover:bg-muted/40"}`}
-                            onClick={() => loadReport(r.id)}
+                        {/* Month row with export button */}
+                        <div className="flex items-center group/month">
+                          <button
+                            onClick={() => toggleMonth(treeKey)}
+                            className="flex-1 flex items-center gap-1.5 pl-6 pr-2 py-1 hover:bg-muted/50 transition-colors"
                           >
-                            <Icon name="FileText" size={11} className="text-muted-foreground shrink-0" />
-                            <span className="text-[11px] truncate flex-1">{r.name}</span>
+                            <Icon name={expandedMonths.has(treeKey) ? "ChevronDown" : "ChevronRight"} size={11} className="text-muted-foreground shrink-0" />
+                            <span className="text-[11px] text-muted-foreground">{MONTH_NAMES[monthNum] || monthKey}</span>
+                            <span className="ml-auto text-[10px] text-muted-foreground/60">{reportsInMonth.length}</span>
+                          </button>
+                          {/* Export department button */}
+                          <button
+                            onClick={() => exportDepartmentExcel(year, monthKey)}
+                            disabled={exportingDept}
+                            className="opacity-0 group-hover/month:opacity-100 transition-opacity mr-2 text-muted-foreground hover:text-primary shrink-0"
+                            title="Экспорт Excel по отделу за этот месяц"
+                          >
+                            {exportingDept
+                              ? <Icon name="Loader2" size={11} className="animate-spin" />
+                              : <Icon name="Download" size={11} />
+                            }
+                          </button>
+                        </div>
+
+                        {expandedMonths.has(treeKey) && (
+                          <>
+                            {/* Employee reports */}
+                            {reportsInMonth.map((r) => (
+                              <div
+                                key={r.id}
+                                className={`group flex items-center gap-1 pl-9 pr-2 py-1 cursor-pointer transition-colors ${
+                                  currentId === r.id
+                                    ? "bg-primary/8 border-l-2 border-l-primary"
+                                    : "hover:bg-muted/40"
+                                }`}
+                                onClick={() => loadReport(r.id)}
+                              >
+                                <Icon name="User" size={11} className="text-muted-foreground shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <span className="text-[11px] truncate block">
+                                    {r.employee_name || r.name}
+                                  </span>
+                                  {r.employee_name && (
+                                    <span className="text-[9px] text-muted-foreground/60 truncate block">{r.name}</span>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); deleteReport(r.id); }}
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive shrink-0"
+                                >
+                                  <Icon name="X" size={11} />
+                                </button>
+                              </div>
+                            ))}
+
+                            {/* Add employee button */}
                             <button
-                              onClick={(e) => { e.stopPropagation(); deleteReport(r.id); }}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive shrink-0"
+                              onClick={() => {
+                                // Pre-fill month from the first report in this period
+                                if (reportsInMonth.length > 0) {
+                                  setMonth(reportsInMonth[0].month_label);
+                                  setDepartment(reportsInMonth[0].department);
+                                }
+                                setAddEmployeeOpen(true);
+                              }}
+                              className="w-full flex items-center gap-1.5 pl-9 pr-3 py-1 text-[11px] text-muted-foreground hover:text-primary hover:bg-muted/30 transition-colors"
                             >
-                              <Icon name="X" size={11} />
+                              <Icon name="UserPlus" size={11} />
+                              Добавить сотрудника
                             </button>
-                          </div>
-                        ))}
+                          </>
+                        )}
                       </div>
                     );
                   })}
@@ -372,7 +536,7 @@ export default function ReportPage() {
         </div>
       </div>
 
-      {/* Основная область — редактор отчёта */}
+      {/* ── Основная область — редактор отчёта ─────────────────────────────── */}
       <div className="flex-1 min-w-0 space-y-3">
         {/* Тулбар */}
         <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-end justify-between">
@@ -384,6 +548,10 @@ export default function ReportPage() {
             <div className="flex flex-col gap-1 flex-1">
               <label className="text-xs text-muted-foreground font-medium">Отдел / организация</label>
               <Input value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="Название отдела" className="h-8 text-sm" />
+            </div>
+            <div className="flex flex-col gap-1 w-[200px]">
+              <label className="text-xs text-muted-foreground font-medium">Сотрудник</label>
+              <Input value={employeeName} onChange={(e) => setEmployeeName(e.target.value)} placeholder="ФИО сотрудника" className="h-8 text-sm" />
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -431,21 +599,32 @@ export default function ReportPage() {
         {/* Диалог сохранения */}
         {saveDialogOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setSaveDialogOpen(false)}>
-            <div className="bg-card rounded-xl border shadow-lg p-5 w-80 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-card rounded-xl border shadow-lg p-5 w-96 space-y-4" onClick={(e) => e.stopPropagation()}>
               <div>
                 <h3 className="text-sm font-semibold mb-1">Сохранение отчёта</h3>
-                <p className="text-xs text-muted-foreground">Укажите название для этого отчёта</p>
+                <p className="text-xs text-muted-foreground">Укажите название и сотрудника</p>
               </div>
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground font-medium">Название</label>
-                <Input
-                  value={reportName}
-                  onChange={(e) => setReportName(e.target.value)}
-                  placeholder="Отчёт за март"
-                  className="h-8 text-sm"
-                  autoFocus
-                  onKeyDown={(e) => { if (e.key === "Enter") saveReport(); if (e.key === "Escape") setSaveDialogOpen(false); }}
-                />
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground font-medium">Название отчёта</label>
+                  <Input
+                    value={reportName}
+                    onChange={(e) => setReportName(e.target.value)}
+                    placeholder="Отчёт за март"
+                    className="h-8 text-sm"
+                    autoFocus
+                    onKeyDown={(e) => { if (e.key === "Enter") saveReport(); if (e.key === "Escape") setSaveDialogOpen(false); }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground font-medium">Сотрудник (ФИО)</label>
+                  <Input
+                    value={employeeName}
+                    onChange={(e) => setEmployeeName(e.target.value)}
+                    placeholder="Иванов И.И."
+                    className="h-8 text-sm"
+                  />
+                </div>
               </div>
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" size="sm" onClick={() => setSaveDialogOpen(false)}>Отмена</Button>
@@ -458,12 +637,54 @@ export default function ReportPage() {
           </div>
         )}
 
+        {/* Диалог добавления сотрудника */}
+        {addEmployeeOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setAddEmployeeOpen(false)}>
+            <div className="bg-card rounded-xl border shadow-lg p-5 w-96 space-y-4" onClick={(e) => e.stopPropagation()}>
+              <div>
+                <h3 className="text-sm font-semibold mb-1">Новый сотрудник</h3>
+                <p className="text-xs text-muted-foreground">Создать новый отчёт для сотрудника за период <strong>{month}</strong></p>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground font-medium">ФИО сотрудника</label>
+                <Input
+                  value={newEmployeeName}
+                  onChange={(e) => setNewEmployeeName(e.target.value)}
+                  placeholder="Иванов И.И."
+                  className="h-8 text-sm"
+                  autoFocus
+                  onKeyDown={(e) => { if (e.key === "Enter") createEmployeeReport(); if (e.key === "Escape") setAddEmployeeOpen(false); }}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setAddEmployeeOpen(false)}>Отмена</Button>
+                <Button size="sm" onClick={createEmployeeReport} disabled={!newEmployeeName.trim()} className="gap-1.5">
+                  <Icon name="UserPlus" size={13} />
+                  Создать
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Employee badge */}
+        {employeeName && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/5 border border-primary/20 w-fit">
+            <Icon name="User" size={13} className="text-primary" />
+            <span className="text-xs font-medium text-primary">{employeeName}</span>
+            {currentId && (
+              <span className="text-[10px] text-muted-foreground ml-1">— {reportName}</span>
+            )}
+          </div>
+        )}
+
         {/* ── TABLE MODE ─────────────────────────────────────────────────────── */}
         {viewMode === "table" && (
           <div className="rounded-lg border bg-card text-sm">
             <div className="px-4 py-2.5 border-b bg-muted/30 flex items-center justify-between">
               <p className="text-[11px] text-muted-foreground font-medium truncate">
                 Отчет к плану выполнения работ {department} за {month}
+                {employeeName && ` — ${employeeName}`}
               </p>
               {loading && <Icon name="Loader2" size={14} className="animate-spin text-muted-foreground shrink-0 ml-2" />}
             </div>
@@ -473,7 +694,11 @@ export default function ReportPage() {
                 <thead>
                   <tr className="bg-muted/40">
                     {COLUMNS.map((col) => (
-                      <th key={col.key} className="border border-border px-2 py-2 text-[11px] font-semibold text-center align-middle leading-tight text-muted-foreground" style={{ minWidth: col.wide ? 200 : 110 }}>
+                      <th
+                        key={col.key}
+                        className="border border-border px-2 py-2 text-[11px] font-semibold text-center align-middle leading-tight text-muted-foreground"
+                        style={{ minWidth: col.wide ? 200 : 110 }}
+                      >
                         {col.label}
                       </th>
                     ))}
@@ -529,15 +754,14 @@ export default function ReportPage() {
         {/* ── FORM / CARDS MODE ──────────────────────────────────────────────── */}
         {viewMode === "form" && (
           <div className="space-y-3">
-            {/* Header info */}
             <div className="rounded-lg border bg-muted/20 px-4 py-2.5 flex items-center gap-2">
-              {loading && <Icon name="Loader2" size={14} className="animate-spin text-muted-foreground shrink-0" />}
-              <p className="text-[11px] text-muted-foreground font-medium">
-                Отчет к плану выполнения работ <span className="text-foreground">{department}</span> за <span className="text-foreground">{month}</span>
+              {loading && <Icon name="Loader2" size={14} className="animate-spin text-muted-foreground" />}
+              <p className="text-[11px] text-muted-foreground">
+                Отчет к плану выполнения работ <strong>{department}</strong> за <strong>{month}</strong>
+                {employeeName && <> — <strong>{employeeName}</strong></>}
               </p>
             </div>
 
-            {/* Row cards */}
             {rows.map((row, index) => (
               <RowFormCard
                 key={row.id}
@@ -548,14 +772,10 @@ export default function ReportPage() {
               />
             ))}
 
-            {/* Add row button */}
-            <button
-              onClick={addRow}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-border text-muted-foreground hover:border-primary/50 hover:text-primary hover:bg-primary/5 transition-all text-sm font-medium"
-            >
-              <Icon name="Plus" size={16} />
+            <Button variant="outline" size="sm" onClick={addRow} className="gap-1.5 text-xs w-full border-dashed">
+              <Icon name="Plus" size={13} />
               Добавить запись
-            </button>
+            </Button>
           </div>
         )}
       </div>

@@ -32,7 +32,7 @@ export default function FilePreview({ file, onClose }: FilePreviewProps) {
 
   return (
     <Dialog open={!!file} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] p-0 gap-0 overflow-hidden">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] p-0 gap-0 overflow-hidden" aria-describedby={undefined}>
         <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30">
           <div className="flex items-center gap-2 min-w-0">
             <Icon name={isImage(file.contentType) ? "Image" : "FileText"} size={16} className="shrink-0 text-muted-foreground" />

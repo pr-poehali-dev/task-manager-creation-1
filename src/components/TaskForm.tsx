@@ -58,7 +58,7 @@ export default function TaskForm({ open, onClose, onSave, task }: TaskFormProps)
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[480px]">
+      <DialogContent className="sm:max-w-[480px]" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle className="text-lg font-semibold">
             {task ? "Редактировать задачу" : "Новая задача"}

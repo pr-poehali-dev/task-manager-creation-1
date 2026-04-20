@@ -91,7 +91,7 @@ function RecipientPicker({ recipients, onInsert, onClose }: {
 
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-md max-h-[80vh] flex flex-col p-0 gap-0">
+      <DialogContent className="max-w-md max-h-[80vh] flex flex-col p-0 gap-0" aria-describedby={undefined}>
         <DialogHeader className="px-4 pt-4 pb-3 border-b">
           <DialogTitle className="flex items-center gap-2">
             <Icon name="Users" size={16} className="text-muted-foreground" />
@@ -377,7 +377,7 @@ export default function DocumentEditor({ open, onClose, onSaved, editing, defaul
   return (
     <>
       <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>{editing ? "Редактировать документ" : "Новый документ"}</DialogTitle>
           </DialogHeader>

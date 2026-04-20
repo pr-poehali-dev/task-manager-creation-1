@@ -39,7 +39,7 @@ function RecipientView({ recipient, onClose, onEdit }: {
 }) {
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Icon name="User" size={18} className="text-muted-foreground" />
@@ -269,7 +269,7 @@ function RecipientEditDialog({ recipient, onClose, onSaved }: {
 
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>{recipient ? "Редактировать адресата" : "Новый адресат"}</DialogTitle>
         </DialogHeader>

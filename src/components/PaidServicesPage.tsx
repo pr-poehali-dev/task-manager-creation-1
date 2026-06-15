@@ -67,10 +67,16 @@ function fmt(n: number) {
   return n.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+const VAT_RATE = 0.22;
+
 function calcTotal(s: Pick<PaidService, "isFixedPrice" | "fixedPrice" | "hours" | "hourlyRate" | "extraCosts">): number {
   const extra = (s.extraCosts || []).reduce((a, c) => a + Number(c.amount), 0);
   if (s.isFixedPrice) return Number(s.fixedPrice || 0) + extra;
   return Number(s.hours) * Number(s.hourlyRate) + extra;
+}
+
+function calcVat(total: number): number {
+  return total * VAT_RATE;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -248,9 +254,19 @@ function ServiceForm({ service, catalog, applicants, tags, onSave, onClose }: Se
           </div>
 
           {/* Total preview */}
-          <div className="flex items-center justify-between pt-1 border-t">
-            <span className="text-xs text-muted-foreground">Итого</span>
-            <span className="text-base font-bold text-primary">{fmt(total)} ₽</span>
+          <div className="space-y-1 pt-2 border-t">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Итого без НДС</span>
+              <span className="text-sm font-semibold">{fmt(total)} ₽</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">НДС 22%</span>
+              <span className="text-sm text-muted-foreground">{fmt(calcVat(total))} ₽</span>
+            </div>
+            <div className="flex items-center justify-between border-t pt-1">
+              <span className="text-xs font-semibold">Итого с НДС</span>
+              <span className="text-base font-bold text-primary">{fmt(total + calcVat(total))} ₽</span>
+            </div>
           </div>
         </div>
 
@@ -740,7 +756,9 @@ export default function PaidServicesPage() {
       s.extraCosts.forEach(ec => rows.push([ec.label, ec.amount]));
     }
     rows.push([]);
-    rows.push(["ИТОГО, ₽", total]);
+    rows.push(["Итого без НДС, ₽", total]);
+    rows.push(["НДС 22%, ₽", calcVat(total)]);
+    rows.push(["ИТОГО с НДС, ₽", total + calcVat(total)]);
     if (s.notes) rows.push(["Примечания", s.notes]);
     const ws = XLSX.utils.aoa_to_sheet(rows);
     ws["!cols"] = [{ wch: 35 }, { wch: 25 }];
@@ -751,7 +769,7 @@ export default function PaidServicesPage() {
 
   // Excel export — summary list
   const exportSummary = () => {
-    const headers = ["Дата", "Заявитель", "Наименование услуги", "Часы", "Ставка ₽/ч", "Надбавки, ₽", "Итого, ₽", "Статус"];
+    const headers = ["Дата", "Заявитель", "Наименование услуги", "Часы", "Ставка ₽/ч", "Надбавки, ₽", "Без НДС, ₽", "НДС 22%, ₽", "Итого с НДС, ₽", "Статус"];
     const rows = filtered.map(s => {
       const extra = (s.extraCosts || []).reduce((a, c) => a + Number(c.amount), 0);
       return [
@@ -762,12 +780,16 @@ export default function PaidServicesPage() {
         s.isFixedPrice ? "—" : s.hourlyRate,
         extra || "—",
         s.total,
+        calcVat(s.total),
+        s.total + calcVat(s.total),
         STATUS_LABELS[s.status] || s.status,
       ];
     });
-    const totalSum = filtered.reduce((a, s) => a + s.total, 0);
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows, [], ["", "", "", "", "", "ИТОГО:", totalSum, ""]]);
-    ws["!cols"] = [{ wch: 12 }, { wch: 30 }, { wch: 35 }, { wch: 8 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 12 }];
+    const totalNoVat = filtered.reduce((a, s) => a + s.total, 0);
+    const totalVat = filtered.reduce((a, s) => a + calcVat(s.total), 0);
+    const totalWithVat = totalNoVat + totalVat;
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows, [], ["", "", "", "", "", "ИТОГО:", totalNoVat, totalVat, totalWithVat, ""]]);
+    ws["!cols"] = [{ wch: 12 }, { wch: 30 }, { wch: 35 }, { wch: 8 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 16 }, { wch: 12 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Перечень услуг");
     XLSX.writeFile(wb, "Перечень_платных_услуг.xlsx");
@@ -832,9 +854,11 @@ export default function PaidServicesPage() {
 
           {/* Summary bar */}
           {filtered.length > 0 && (
-            <div className="flex items-center gap-4 px-3 py-2 rounded-lg bg-muted/30 text-sm">
+            <div className="flex items-center gap-4 px-3 py-2 rounded-lg bg-muted/30 text-sm flex-wrap">
               <span className="text-muted-foreground">Итого по фильтру:</span>
-              <span className="font-bold text-primary">{fmt(filtered.reduce((a, s) => a + s.total, 0))} ₽</span>
+              <span className="text-muted-foreground text-xs">без НДС: <span className="font-semibold text-foreground">{fmt(filtered.reduce((a, s) => a + s.total, 0))} ₽</span></span>
+              <span className="text-muted-foreground text-xs">НДС 22%: <span className="font-semibold text-foreground">{fmt(filtered.reduce((a, s) => a + calcVat(s.total), 0))} ₽</span></span>
+              <span className="font-bold text-primary">{fmt(filtered.reduce((a, s) => a + s.total + calcVat(s.total), 0))} ₽ с НДС</span>
               <span className="text-muted-foreground text-xs">({filtered.length} услуг)</span>
             </div>
           )}
@@ -891,7 +915,10 @@ export default function PaidServicesPage() {
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-2 shrink-0">
-                      <span className="text-lg font-bold text-primary">{fmt(s.total)} ₽</span>
+                      <div className="text-right">
+                        <div className="text-lg font-bold text-primary">{fmt(s.total + calcVat(s.total))} ₽</div>
+                        <div className="text-[11px] text-muted-foreground">без НДС: {fmt(s.total)} ₽</div>
+                      </div>
                       <div className="flex items-center gap-1">
                         <button onClick={() => exportSingle(s)} className="text-muted-foreground hover:text-primary p-1" title="Экспорт расчёта в Excel">
                           <Icon name="Download" size={14} />

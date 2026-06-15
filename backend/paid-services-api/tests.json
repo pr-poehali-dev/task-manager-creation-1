@@ -1,0 +1,10 @@
+{
+  "tests": [
+    {
+      "name": "GET paid services list (unauth)",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 401
+    }
+  ]
+}

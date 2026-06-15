@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS service_catalog (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  is_fixed_price BOOLEAN NOT NULL DEFAULT FALSE,
+  fixed_price NUMERIC(12,2),
+  hourly_rate NUMERIC(12,2) NOT NULL DEFAULT 1420,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

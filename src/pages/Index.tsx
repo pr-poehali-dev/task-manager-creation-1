@@ -10,6 +10,7 @@ import CalendarView from "@/components/CalendarView";
 import AuthScreen from "@/components/AuthScreen";
 import DocumentsPage from "@/components/DocumentsPage";
 import ReportPage from "@/components/ReportPage";
+import PaidServicesPage from "@/components/PaidServicesPage";
 import type { Task, Priority } from "@/lib/task-store";
 import {
   fetchTasks,
@@ -21,7 +22,7 @@ import {
 import { checkAuth, clearToken } from "@/lib/auth";
 import type { User } from "@/lib/auth";
 
-type Tab = "active" | "completed" | "priority" | "deadlines" | "stats" | "archive" | "documents" | "report";
+type Tab = "active" | "completed" | "priority" | "deadlines" | "stats" | "archive" | "documents" | "report" | "paid";
 
 const Index = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -183,7 +184,7 @@ const Index = () => {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {tab !== "documents" && tab !== "report" && (
+              {tab !== "documents" && tab !== "report" && tab !== "paid" && (
                 <Button
                   onClick={() => {
                     setEditingTask(null);
@@ -210,7 +211,7 @@ const Index = () => {
       </header>
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6">
-        {tab !== "documents" && tab !== "report" && (
+        {tab !== "documents" && tab !== "report" && tab !== "paid" && (
           <div className="mb-5">
             <div className="relative">
               <Icon
@@ -266,6 +267,10 @@ const Index = () => {
             <TabsTrigger value="report" className="gap-1.5 text-xs sm:text-sm">
               <Icon name="ClipboardList" size={14} />
               Отчётность
+            </TabsTrigger>
+            <TabsTrigger value="paid" className="gap-1.5 text-xs sm:text-sm">
+              <Icon name="Receipt" size={14} />
+              Платные услуги
             </TabsTrigger>
           </TabsList>
 
@@ -345,6 +350,10 @@ const Index = () => {
 
           <TabsContent value="report">
             <ReportPage />
+          </TabsContent>
+
+          <TabsContent value="paid">
+            <PaidServicesPage />
           </TabsContent>
         </Tabs>
       </main>
